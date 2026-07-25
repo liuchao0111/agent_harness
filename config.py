@@ -1,23 +1,30 @@
 # 倒入操作系统相关的模块
-import os 
-# 导入Path对象用于处理文件路径
-# from pathlib import Path
+import os
+from pathlib import Path
 
 # 导入dotenv 模块来加载环境变量
 from dotenv import load_dotenv
 
-#导入OpenAI官方python库
+# 导入OpenAI官方python库
 from openai import OpenAI
- 
- #加载.env中的环境变量 override=True表示覆盖已有环境变量
+
+# 加载.env中的环境变量 override=True表示覆盖已有环境变量
 load_dotenv(override=True)
+
+# 设置工作目录为当前目录
+WORKDIR = Path.cwd()
+
+# Change Code Page 设置命令行编码为UTF-8 UTF-8对应的代码页编号是65001 ，GBK对应的代码编号是 936
+# os.system("chcp 65001")
+
+# 设置文本编码为UTF-8
+TEXT_ENCODING = "utf-8"
 
 # 定义默认最大的Token数
 DEFAULT_MAX_TOKENS = 8000
-#从环境变量中获取主要模型名称
-MODEL_ID = os.environ['MODEL_ID']
-#创建OpenAI客户端对象 使用环境变量中的API密钥
+# 从环境变量中获取主要模型名称
+MODEL_ID = os.environ["MODEL_ID"]
+# 创建OpenAI客户端对象 使用环境变量中的API密钥
 client = OpenAI(
-    api_key=os.environ['OPENAI_API_KEY'],
-    base_url= os.environ['OPENAI_BASE_URL']
+    api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ["OPENAI_BASE_URL"]
 )

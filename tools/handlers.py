@@ -1,11 +1,16 @@
+import glob as g
+
 # 导入os模块 用于与操作系统交互
 import os
 
 # 导入subprocess模块 用于执行子进程
 import subprocess
 
+# 从config模块导入TEXT_ENCODING和WORKDIR，用于指定文本编码和工作目录
+from config import TEXT_ENCODING, WORKDIR
+
 # 从utils模块中导入decode_subprocess_output函数 用于解码子进程输出
-from utils import decode_subprocess_output
+from utils import decode_subprocess_output, safe_path
 
 
 # 定义run_bash函数,接收一个字符串类型参数command,并返回字符串
@@ -27,6 +32,7 @@ def run_bash(command: str) -> str:
             command,  # 要执行的命令
             shell=True,  # 在shell中执行
             cwd=os.getcwd(),  # 当前工作目录设置为当前路径
+            check=False,  # 明确指定不抛出子进程非零退出码的异常
             # text=True,
             capture_output=True,  # 捕获标准输出和标准错误
             timeout=20,  # 超时时间为120秒
@@ -41,5 +47,85 @@ def run_bash(command: str) -> str:
         return f"错误: {e}"
 
 
+# 定义读取文件的处理函数 参数为文件路径和可选的行数限制
+def run_read(path: str, limit: int | None = None) -> str:
+    # 尝试执行以下代码
+    try:
+        # 使用safe_path校验并控制文件路径,按指定编码读取内容并按行分割
+        lines = safe_path(path).read_text(encoding=TEXT_ENCODING).splitlines()
+        # 如果有行数限制且文件超过限制
+        if limit and limit < len(lines):
+            # 截取前limit行，并在最后添加提示剩余行的说明
+            lines = lines[:limit] + [f"...(还有{len(lines) - limit}行)"]
+        # 将行列表拼接为字符串返回
+        return "\n".join(lines)
+    # 捕获所有异常并返回错误信息
+    except (FileNotFoundError, PermissionError, OSError, UnicodeDecodeError) as e:
+        return f"错误: {e}"
+
+
+# 定义写文件函数 参数为路径和内容
+def run_write(path: str, content: str) -> str:
+    # 尝试执行以下代码
+    try:
+        # 使用safe_path校验并获取目标文件路径
+        file_path = safe_path(path)
+        # 确保文件父目录存在 若不存在则创建
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        # 按照指定编码写入内容到文件
+        file_path.write_text(content, encoding=TEXT_ENCODING)
+        # 返回写入成功的提示语句, 包括字节数
+        return f"已写入{len(content)} 字节到{path}"
+    # 捕获所有异常并返货错误信息
+    except (PermissionError, OSError, UnicodeEncodeError) as e:
+        return f"错误 {e}"
+
+
+# 定义编辑文件函数 参数为路径 、 待替换旧文本、和新文本
+def run_edit(path: str, old_text: str, new_text: str) -> str:
+    # 尝试执行以下代码
+    try:
+        # 使用safe_path校验并获取目标文件路径
+        file_path = safe_path(path)
+        # 读取文件的全部内容(默认编码)
+        text = file_path.read_text()
+        # 如果旧文本不在内容中
+        if old_text not in text:
+            # 返回错误提示 未找到制定文本
+            return f"错误 在{path}中 找到制定文本"
+        # 替换第一次出现的旧文本为新文本, 并写回文件
+        file_path.write_text(
+            text.replace(old_text, new_text, 1), encoding=TEXT_ENCODING
+        )
+        # 返回编辑成功的提示
+        return f"已编辑 {path}"
+    except (FileNotFoundError, PermissionError, OSError, UnicodeDecodeError) as e:
+        return f"错误: {e}"
+
+
+# 定义glob通配符路径匹配参数 , 参数为模式
+def run_glob(pattern: str) -> str:
+    # 尝试执行以下代码
+    try:
+        # 初始化结果列表
+        results = []
+        # 遍历所有匹配到的路径 根目录为WORKDIR
+        for match in g.glob(pattern, root_dir=WORKDIR):
+            # 检测匹配到的路径是否相对WORKDIR安全
+            if (WORKDIR / match).resolve().is_relative_to(WORKDIR):
+                # 将安全的匹配结果加入结果列表
+                results.append(match)
+        # 如果结果非空 , 拼接为字符串返回 ，否则无法返回无匹配的提示
+        return "\n".join(results) if results else "（无匹配"
+    except (OSError, PermissionError) as e:
+        return f"错误: {e}"
+
+
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
-TOOL_HANDLERS = {"bash": run_bash}
+TOOL_HANDLERS = {
+    "bash": run_bash,
+    "read_file": run_read,
+    "write_file": run_write,
+    "eidt_file": run_edit,
+    "glob_file": run_glob,
+}

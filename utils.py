@@ -1,3 +1,10 @@
+# 从 pathlib 库中导入 Path 类，用于管理和操作文件路径
+from pathlib import Path
+
+# 从config模块中导入WORKDIR变,表示工作目录路径
+from config import WORKDIR
+
+
 # 定义一个函数assistant_message_dict 参数为message , 返回一个字典
 def assistant_message_dict(message) -> dict:
     # 使用model_dump方法转换message对象为字典 排除值为None的项
@@ -23,3 +30,13 @@ def decode_subprocess_output(data: bytes | None) -> str:
             continue
     # 如果以上编码都无法解码，则使用utf-8编码并使用replace策略处理错误，并返回结果
     return data.decode("utf-8", errors="replace")
+
+
+def safe_path(p: str) -> Path:
+    # 通过将WORKIDIR与p链接,并调用resolve方法，获得绝对路径对象
+    path = (WORKDIR / p).resolve()
+    # 判断path路径是否在WORKDIR工作区内 如果不是则抛出异常
+    if not path.is_relative_to(WORKDIR):
+        raise ValueError(f"路径超出工作区 {p}")
+    # 返回最终安全生成的最终路径对象
+    return path

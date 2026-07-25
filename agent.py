@@ -4,9 +4,6 @@ import json
 # 从config模块导入默认设置的最大token数和主模型
 from config import DEFAULT_MAX_TOKENS, MODEL_ID
 
-# 从utils模块导入assistant_message_dict函数
-from utils import assistant_message_dict
-
 # 从llm模块导入call_llm函数
 from llm import call_llm
 
@@ -15,6 +12,12 @@ from prompt import get_system_prompt
 
 # 从tools.executor模块导入execute_tool函数
 from tools.executor import execute_tool
+
+# 从utils模块导入assistant_message_dict函数
+from utils import assistant_message_dict
+
+# 从permission模块导入check_permission函数
+from permission import check_permission
 
 
 # 定义agent_loop函数 参数是消息列表
@@ -46,7 +49,22 @@ def agent_loop(messages: list):
             args = json.loads(tool_call.function.arguments or "{}")
             # 打印工具名称 蓝色高亮
             print(f"\x1b[36m> {name} {json.dumps(args, ensure_ascii=False)}\x1b[0m")
-            # 执行工具 获取输出结果
+            # 如果没有通过权限检查 则打印拒绝信息 并跳过执行
+            reason = check_permission(name, args)
+            if reason is not None:
+                # 打印红色拒绝信息 显示拒绝原因
+                print(f"\033[91m[!] 拒绝执行: {reason}\033[0m")
+                # 把拒绝信息以特定格式加入消息列表
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": f"拒绝执行: {reason}",
+                    }
+                )
+                # 跳过执行该工具
+                continue
+            # 如果通过权限检查 则执行工具 获取输出结果
             output = execute_tool(name, args)
             # 把工具执行结果以特定格式加入消息列表
             messages.append(
