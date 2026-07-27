@@ -16,8 +16,11 @@ from tools.executor import execute_tool
 # 从utils模块导入assistant_message_dict函数
 from utils import assistant_message_dict
 
-# 从permission模块导入check_permission函数
-from permission import check_permission
+# # 从permission模块导入check_permission函数
+# from permission import check_permission
+
+# 从hooks模块导入trigger_hooks函数
+from hooks import trigger_hooks
 
 
 # 定义agent_loop函数 参数是消息列表
@@ -50,22 +53,36 @@ def agent_loop(messages: list):
             # 打印工具名称 蓝色高亮
             print(f"\x1b[36m> {name} {json.dumps(args, ensure_ascii=False)}\x1b[0m")
             # 如果没有通过权限检查 则打印拒绝信息 并跳过执行
-            reason = check_permission(name, args)
-            if reason is not None:
-                # 打印红色拒绝信息 显示拒绝原因
-                print(f"\033[91m[!] 拒绝执行: {reason}\033[0m")
-                # 把拒绝信息以特定格式加入消息列表
+            # 触发'PreToolUse'钩子 判断是否允许工具执行
+            blocked = trigger_hooks("PreToolUse", name, args)
+            # 如果被阻止(则blocked有返回值) 则进入下面的分支
+            if blocked:
+                # 将阻塞消息以'tool'角色形式加入消息列表
                 messages.append(
                     {
-                        "role": "tool",
+                        "role": "toole",
                         "tool_call_id": tool_call.id,
-                        "content": f"拒绝执行: {reason}",
+                        "content": str(blocked),
                     }
                 )
-                # 跳过执行该工具
-                continue
+            # reason = check_permission(name, args)
+            # if reason is not None:
+            #     # 打印红色拒绝信息 显示拒绝原因
+            #     print(f"\033[91m[!] 拒绝执行: {reason}\033[0m")
+            #     # 把拒绝信息以特定格式加入消息列表
+            #     messages.append(
+            #         {
+            #             "role": "tool",
+            #             "tool_call_id": tool_call.id,
+            #             "content": f"拒绝执行: {reason}",
+            #         }
+            #     )
+            #     # 跳过执行该工具
+            #     continue
             # 如果通过权限检查 则执行工具 获取输出结果
             output = execute_tool(name, args)
+            # 触发 'PostToolUse'钩子 进行后置处理
+            trigger_hooks("PostToolUse", name, args, output)
             # 把工具执行结果以特定格式加入消息列表
             messages.append(
                 {"role": "tool", "tool_call_id": tool_call.id, "content": output}
