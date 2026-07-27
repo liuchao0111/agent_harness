@@ -103,7 +103,7 @@ def log_hook(name: str, args: dict):
 # 钩子、处理工具输出过大的情况
 def large_output_hook(name: str, args: dict, output):
     # 判断输出长度是否超过10w字符
-    if len(str(output)) > 10:
+    if len(str(output)) > 100000:
         # 打印输出过大警告
         print(f"\x1b[33m[HOOK] ⚠ {name} 输出过大：{len(str(output))} 字符\x1b[0m")
     # 返回None

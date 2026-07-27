@@ -55,4 +55,25 @@ TOOLS = [
     _fn_tool(
         "glob", "按glob模式查找文件", {"pattern": {"type": "string"}}, ["pattern"]
     ),
+    _fn_tool(
+        "todo_write",
+        "创建并管理当前编码会话的任务列表。",
+        {
+            "todos": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "completed"],
+                        },
+                    },
+                    "required": ["content", "status"],
+                },
+            }
+        },
+        ["todos"],
+    ),
 ]

@@ -4,6 +4,9 @@ import json
 # 从config模块导入默认设置的最大token数和主模型
 from config import DEFAULT_MAX_TOKENS, MODEL_ID
 
+# 从hooks模块导入trigger_hooks函数
+from hooks import trigger_hooks
+
 # 从llm模块导入call_llm函数
 from llm import call_llm
 
@@ -16,15 +19,14 @@ from tools.executor import execute_tool
 # 从utils模块导入assistant_message_dict函数
 from utils import assistant_message_dict
 
-# # 从permission模块导入check_permission函数
-# from permission import check_permission
-
-# 从hooks模块导入trigger_hooks函数
-from hooks import trigger_hooks
+# 定义变量rounds_since_todo 用于记录自上次todo_write调用以来的轮数
+rounds_since_todo = 0
 
 
 # 定义agent_loop函数 参数是消息列表
 def agent_loop(messages: list):
+    # 声明全局变量rounds_since_todo
+    global rounds_since_todo
     # 将最大的token数设置为默认值
     max_tokens = DEFAULT_MAX_TOKENS
     # 设置所用模型为主模型P
@@ -33,6 +35,18 @@ def agent_loop(messages: list):
     while True:
         # 获取系统提示词
         system = get_system_prompt()
+        # 如果距离上次 todo 写入的论述大于等于3 且消息列表不为空
+        if rounds_since_todo >= 3 and messages:
+            # 在消息列表中添加一条用户提醒 提示助手更新todo列表
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "<reminder>请更新你的 todo 列表。<reminder>",
+                }
+            )
+            print("\x1b[33m> 请更新你的 todo 列表。\x1b[0m")
+            # 轮数计数器rounds_since_todo 复位为 0
+            rounds_since_todo = 0
         # 调用大模型获取回复
         response = call_llm(system, messages, max_tokens, model)
         # 取出回复中的第一个回复
@@ -43,7 +57,17 @@ def agent_loop(messages: list):
         messages.append(assistant_message_dict(assistant))
         # 如果助手没有工具可以调用, 则终止循环
         if not assistant.tool_calls:
+            # 调用trigger_hooks函数 触发名为 'Stop'的hook 并传入当前消息列表作为参数 获取返回值force
+            force = trigger_hooks("Stop", messages)
+            # 判断force是否有值 即hook是否返回了信息需要处理
+            if force:
+                # 如果有值 则将其作为用户角色的消息添加到消息列表
+                messages.append({"role": "user", "content": force})
+                # 继续while循环 重新进入agent_loop流程
+                continue
             return
+        # 轮数计数器 rounds_since_todo 加 1
+        rounds_since_todo += 1
         # 遍历所有工具调用
         for tool_call in assistant.tool_calls:
             # 获取工具名称
@@ -65,20 +89,8 @@ def agent_loop(messages: list):
                         "content": str(blocked),
                     }
                 )
-            # reason = check_permission(name, args)
-            # if reason is not None:
-            #     # 打印红色拒绝信息 显示拒绝原因
-            #     print(f"\033[91m[!] 拒绝执行: {reason}\033[0m")
-            #     # 把拒绝信息以特定格式加入消息列表
-            #     messages.append(
-            #         {
-            #             "role": "tool",
-            #             "tool_call_id": tool_call.id,
-            #             "content": f"拒绝执行: {reason}",
-            #         }
-            #     )
-            #     # 跳过执行该工具
-            #     continue
+                # 跳过本次循环，继续处理下一个工具调用
+                continue
             # 如果通过权限检查 则执行工具 获取输出结果
             output = execute_tool(name, args)
             # 触发 'PostToolUse'钩子 进行后置处理

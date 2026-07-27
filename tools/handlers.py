@@ -121,6 +121,44 @@ def run_glob(pattern: str) -> str:
         return f"错误: {e}"
 
 
+# 定义全局变量CURRENT_TODOS，用于存储当前的任务列表 ，类型为list[dict]
+CURRENT_TODOS: list[dict] = []
+
+
+# 定义run_todo_write函数 ，参数为todos列表，返回字符串
+def run_todo_write(todos: list) -> str:
+    # 声明使用全局变量CURRENT_TODOS
+    global CURRENT_TODOS
+    # 遍历todos列表 获取每个任务及其索引
+    for i, t in enumerate(todos):
+        # 如果任务中缺少content或status字段
+        if "content" not in t or "status" not in t:
+            # 返回错误提示 指出缺少字段的位置
+            return f"错误 todos[{i}] 缺少 content 或 status"
+        # 如果任务的status不是允许的三种状态
+        if t["status"] not in ("pending", "in_progress", "completed"):
+            # 返回错误提示 指出状态无效
+            return f"错误： todos[{i}] 的状态无效 : {t['status']}"
+    # 校验全部通过后 更新全局任务列表
+    CURRENT_TODOS = todos
+    # 初始化显示用的lines列表 第一行为标题 并加黄颜色
+    lines = ["\n\x1b[33m## 当前任务\x1b[0m"]
+    # 遍历当前所有任务
+    for t in CURRENT_TODOS:
+        # 根据任务状态，选择不同的彩色标签
+        icon = {
+            "pending": "\x1b[33m等待中\x1b[0m",
+            "in_progress": "\x1b[36m处理中\x1b[0m",
+            "completed": "\x1b[32m已完成\x1b[0m",
+        }[t["status"]]
+        # 将格式化后的任务内容和标签加入lines
+        lines.append(f"  [{icon}] {t['content']}")
+    # 将所有内容组合成字符串打印到标准输出
+    print("\n".join(lines))
+    # 返回已更新任务数的字符串提示
+    return f"已更新 {len(CURRENT_TODOS)} 个任务"
+
+
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
 TOOL_HANDLERS = {
     "bash": run_bash,
@@ -128,4 +166,5 @@ TOOL_HANDLERS = {
     "write_file": run_write,
     "eidt_file": run_edit,
     "glob_file": run_glob,
+    "todo_write": run_todo_write,
 }
