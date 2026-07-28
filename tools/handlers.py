@@ -165,6 +165,6 @@ TOOL_HANDLERS = {
     "read_file": run_read,
     "write_file": run_write,
     "eidt_file": run_edit,
-    "glob_file": run_glob,
+    "glob": run_glob,
     "todo_write": run_todo_write,
 }

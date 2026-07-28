@@ -23,7 +23,7 @@ def _fn_tool(
 
 
 # 定义一个工具列表 包含一个通过_fn_tool函数生成的工具 bash命令执行
-TOOLS = [
+BASE_TOOLS = [
     # 定义 bash 命令行工具，参数为 command（字符串类型）
     _fn_tool("bash", "执行一条shell命令", {"command": {"type": "string"}}, ["command"]),
     # 定义读取文件内容的工具 参数为path(字符串类型) 和 limit(整数类型), 其中 path为必需
@@ -55,6 +55,11 @@ TOOLS = [
     _fn_tool(
         "glob", "按glob模式查找文件", {"pattern": {"type": "string"}}, ["pattern"]
     ),
+]
+
+
+TOOLS = [
+    *BASE_TOOLS,
     _fn_tool(
         "todo_write",
         "创建并管理当前编码会话的任务列表。",
@@ -75,5 +80,11 @@ TOOLS = [
             }
         },
         ["todos"],
+    ),
+    _fn_tool(
+        "spawn_subagent",
+        "启动子 Agent 处理复杂子任务。仅返回最终结论。",
+        {"description": {"type": "string"}},
+        ["description"],
     ),
 ]

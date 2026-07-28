@@ -40,3 +40,15 @@ def safe_path(p: str) -> Path:
         raise ValueError(f"路径超出工作区 {p}")
     # 返回最终安全生成的最终路径对象
     return path
+
+
+# 定义一个extract_text函数 参数为content 返回字符串类型
+def extract_text(content) -> str:
+    # 如果content为None 返回空字符串
+    if content is None:
+        return ""
+    # 如果content是字符串类型 直接返回
+    if isinstance(content, str):
+        return content
+    # 否则 将content转换为字符串再返回
+    return str(content)
