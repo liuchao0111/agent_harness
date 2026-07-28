@@ -9,6 +9,9 @@ import subprocess
 # 从config模块导入TEXT_ENCODING和WORKDIR，用于指定文本编码和工作目录
 from config import TEXT_ENCODING, WORKDIR
 
+# 从 skills模块 导入 load_skill函数
+from skills import load_skill
+
 # 从utils模块中导入decode_subprocess_output函数 用于解码子进程输出
 from utils import decode_subprocess_output, safe_path
 
@@ -161,10 +164,11 @@ def run_todo_write(todos: list) -> str:
 
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
 TOOL_HANDLERS = {
-    "bash": run_bash,
-    "read_file": run_read,
-    "write_file": run_write,
-    "eidt_file": run_edit,
-    "glob": run_glob,
-    "todo_write": run_todo_write,
+    "bash": run_bash,  # 执行shell命令
+    "read_file": run_read,  # 读取文件内容
+    "write_file": run_write,  # 写入文件内容
+    "eidt_file": run_edit,  # 编辑文件内容
+    "glob": run_glob,  # 通配符路径匹配
+    "todo_write": run_todo_write,  # 创建并管理当前编码会话的任务列表
+    "load_skill": load_skill,  # 按名称加载技能的完整内容
 }

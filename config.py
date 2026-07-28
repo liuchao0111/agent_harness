@@ -28,3 +28,6 @@ MODEL_ID = os.environ["MODEL_ID"]
 client = OpenAI(
     api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ["OPENAI_BASE_URL"]
 )
+
+# 设置技能目录为工作目录下的skills目录
+SKILLS_DIR = WORKDIR / "skills"

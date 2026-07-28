@@ -52,3 +52,28 @@ def extract_text(content) -> str:
         return content
     # 否则 将content转换为字符串再返回
     return str(content)
+
+
+# 定义一个函数parse_frontmatter函数 参数为text 返回一个元祖(字典 字符串)
+def parse_frontmatter(text: str) -> tuple[dict, str]:
+    # 如果text不是以 '---' 开头 则直接返回空字典和原始文本
+    if not text.startswith("---"):
+        return {}, text
+    # 用 '---' 分割文本 最多分割2次 得到3段内容
+    parts = text.split("---", 2)
+    # 如果分割出来的部分不足3个，说明无有效frontmatter，返回空字典和原始文本
+    if len(parts) < 3:
+        return {}, text
+    # 新建一个空字典 用于存储frontmatter的键值对
+    meta = {}
+    # 遍历frontmatter内容区域的每一行 去首尾空白  按换行拆成列表
+    for line in parts[1].strip().splitlines():
+        # 如果该行包含冒号 认为是key:value格式
+        if ":" in line:
+            # 以冒号分割该行成键和值(只分一次)
+            k, v = line.split(":", 1)
+            # 去掉键和值的两端空白 并将值两端的引号去除 存入了字典
+            meta[k.strip()] = v.strip().strip('"').strip("'")
+
+    # 返回已解析好的meta字典和去除空白后的正文内容
+    return meta, parts[2].strip()
