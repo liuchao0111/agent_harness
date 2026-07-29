@@ -5,6 +5,7 @@ import json
 from config import DEFAULT_MAX_TOKENS, MODEL_ID
 
 # 从hooks模块导入trigger_hooks函数
+from history import snip_compact, tool_result_budget
 from hooks import trigger_hooks
 
 # 从llm模块导入call_llm函数
@@ -35,6 +36,10 @@ def agent_loop(messages: list):
     while True:
         # 获取系统提示词
         system = get_system_prompt()
+        # L3:tool_result_budget 超大tool结果落盘
+        messages[:] = tool_result_budget(messages)
+        # L1: snip_compact - 消息 > 50 条时保留 头3 + 尾 46, 中间裁掉
+        messages[:] = snip_compact(messages)
         # 如果距离上次 todo 写入的论述大于等于3 且消息列表不为空
         if rounds_since_todo >= 3 and messages:
             # 在消息列表中添加一条用户提醒 提示助手更新todo列表
