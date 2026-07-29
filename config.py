@@ -31,3 +31,12 @@ client = OpenAI(
 
 # 设置技能目录为工作目录下的skills目录
 SKILLS_DIR = WORKDIR / "skills"
+
+# 设置持久化阈值为1000
+PERSIST_THRESHOLD = 1000
+
+# 设置最大字节数为100000
+MAX_BYTES = 10000
+
+# 设置工具结构目录为工作目录下的 .task_outputs / tool-results 目录
+TOOL_RESULTS_DIR = WORKDIR / ".task_outputs" / "tool-results"
