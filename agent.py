@@ -2,14 +2,22 @@
 import json
 
 # 从config模块导入默认设置的最大token数和主模型
-from config import DEFAULT_MAX_TOKENS, MODEL_ID
+from config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, MODEL_ID
 
 # 从hooks模块导入trigger_hooks函数
-from history import snip_compact, tool_result_budget
+from history import (
+    compact_history,
+    estimate_size,
+    micro_compact,
+    reactive_compact,
+    repair_messages_chain,
+    snip_compact,
+    tool_result_budget,
+)
 from hooks import trigger_hooks
 
 # 从llm模块导入call_llm函数
-from llm import call_llm
+from llm import call_llm, is_prompt_too_long_error
 
 # 从prompt模块导入get_system_prompt函数
 from prompt import get_system_prompt
@@ -40,6 +48,15 @@ def agent_loop(messages: list):
         messages[:] = tool_result_budget(messages)
         # L1: snip_compact - 消息 > 50 条时保留 头3 + 尾 46, 中间裁掉
         messages[:] = snip_compact(messages)
+        # L2: micro_compact - 仅保留最近 3 条 tool完整内容 旧的换占位符
+        messages[:] = micro_compact(messages)
+        # L4: compcat_history - 超出上下文限制写 transcript -> LLM摘要 -> 替换为一条[已压缩]
+        if estimate_size(messages) > CONTEXT_LIMIT:
+            print("[自动压缩]")
+            messages[:] = compact_history(messages)
+        # 修复消息链: 补全缺失的tool响应 移除独立的 tool 消息
+        # todo 为什么这个位置还要调用 移除独立tool消息的方法
+        messages[:] = repair_messages_chain(messages)
         # 如果距离上次 todo 写入的论述大于等于3 且消息列表不为空
         if rounds_since_todo >= 3 and messages:
             # 在消息列表中添加一条用户提醒 提示助手更新todo列表
@@ -53,7 +70,16 @@ def agent_loop(messages: list):
             # 轮数计数器rounds_since_todo 复位为 0
             rounds_since_todo = 0
         # 调用大模型获取回复
-        response = call_llm(system, messages, max_tokens, model)
+        try:
+            response = call_llm(system, messages, max_tokens, model)
+        except Exception as e:
+            # 如果捕获到的异常提示是提示词过长的错误
+            if is_prompt_too_long_error(e):
+                # 对消息列表进行反应式压缩 减少长度
+                messages[:] = reactive_compact(messages)
+                # 跳过本次循环 进行下一次
+                continue
+            raise
         # 取出回复中的第一个回复
         choice = response.choices[0]
         # 获取助手回复内容
@@ -79,6 +105,12 @@ def agent_loop(messages: list):
             name = tool_call.function.name
             # 解析工具参数 若为空则用空字典
             args = json.loads(tool_call.function.arguments or "{}")
+            # 如果工具名称是compact
+            if name == "compact":
+                # 调用compact_history函数，对messages列表进行消息压缩处理
+                messages[:] = compact_history(messages)
+                # 跳出当前for tool_call循环
+                break
             # 打印工具名称 蓝色高亮
             print(f"\x1b[36m> {name} {json.dumps(args, ensure_ascii=False)}\x1b[0m")
             # 如果没有通过权限检查 则打印拒绝信息 并跳过执行
@@ -89,7 +121,7 @@ def agent_loop(messages: list):
                 # 将阻塞消息以'tool'角色形式加入消息列表
                 messages.append(
                     {
-                        "role": "toole",
+                        "role": "tool",
                         "tool_call_id": tool_call.id,
                         "content": str(blocked),
                     }

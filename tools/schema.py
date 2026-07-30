@@ -90,4 +90,7 @@ TOOLS = [
     _fn_tool(
         "load_skill", "按名称加载技能的完整内容", {"name": {"type": "string"}}, ["name"]
     ),
+    _fn_tool(
+        "compact", "摘要较早对话以释放上下文空间。", {"focus": {"type": "string"}}, []
+    ),
 ]

@@ -1,12 +1,20 @@
 # 从config模块导入配置常量
 # import json
 # 定义函数 用于持久化较大的输出内容
+import json
+import time
+
 from config import (
+    DEFAULT_MAX_TOKENS,
+    KEEP_RECENT,
     MAX_BYTES,
     MAX_MESSAGES,
+    MODEL_ID,
     PERSIST_THRESHOLD,
     TEXT_ENCODING,
     TOOL_RESULTS_DIR,
+    TRANSCRIPT_DIR,
+    client,
 )
 
 
@@ -186,7 +194,7 @@ def repair_messages_chain(messages: list) -> list:
     repaired: list[dict] = []
     # 记录需要等待tool响应的tool_call集合
     # { callIdA , callIdB }
-    pending_ids = set[str] = set()
+    pending_ids: set[str] = set()
 
     # 内部函数: 将当前等待的tool_call用reason伪造tool消息并清空待完成集合
     def flush_pending(reason: str):
@@ -287,3 +295,122 @@ def snip_compact(messages: list, max_messages: int = MAX_MESSAGES) -> list:
     )
     # 修复裁剪后的消息链
     return repair_messages_chain(compacted)
+
+
+# 定义一个函数 用于收集所有role为"tole"的消息及其索引
+def collector_tool_messages(messages: list) -> list:
+    # 遍历消息列表 筛选出role为"tool"的消息 并返回索引和消息的元祖列表
+    return [(i, m) for i, m in enumerate(messages) if m.get("role") == "tool"]
+
+
+# 定义一个函数 用于对较早的工具进行内容压缩
+def micro_compact(messages: list) -> list:
+    # 收集所有tool类型的消息及其索引
+    tool_msgs = collector_tool_messages(messages)
+    # 如果tool消息不超过设定的保留数 则直接返回原消息列表
+    if len(tool_msgs) <= KEEP_RECENT:
+        return messages
+    # 遍历除最近保留的tool消息以外的其他tool消息
+    for _i, msg in tool_msgs[:-KEEP_RECENT]:
+        # 获取tool消息的内容字段 并确保为字符串类型
+        content = msg.get("content", "")
+        # 如果内容长度超过120个字符 则进行内容压缩
+        if len(content) > 120:
+            # 将内容转换为压缩提示心
+            msg["content"] = "[较早的工具结果已压缩。需要时请重新运行。]"
+    # 返回消息列表 已就地修改
+    return messages
+
+
+# 定义函数estimate_size 用于计算消息列表的字符长度
+def estimate_size(messages: list) -> int:
+    # 将消息列表转为字符串后取长度作为大小估算
+    return len(str(messages))
+
+
+# 定义函数 write_transcript 用于将消息写入jsonl文件
+def write_transcript(messages: list):
+    # 确保转录文件夹存在 不存在则创建
+    TRANSCRIPT_DIR.mkdir(parents=True, exist_ok=True)
+    # 拼接生成转录文件的路径(以时间戳命名)
+    path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
+    # 以 utf-8 编码打开文件 准备写入
+    with path.open("w", encoding=TEXT_ENCODING) as f:
+        # 遍历每条消息
+        for msg in messages:
+            # 将每条消息转为json字符串并写入文件 每条一行
+            f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
+    return path
+
+
+# 定义 summarize_history函数 用于总结历史对话
+def summarize_history(messages: list) -> str:
+    # 将消息列表转换为json字符串 并裁剪至最多8万字符
+    conversation = json.dumps(messages, default=str, ensure_ascii=False)[:8000]
+    # 构造汇总用的prompt 要求对对话进行总结
+    prompt = (
+        "总结以下编程 Agent 对话，以便继续工作。\n"
+        "保留: 1.当前目标 2.关键发现/决策 3. 读/改过的文件"
+        "4. 剩余工作 5.用户约束。\n简介但具体。 \n\n" + conversation
+    )
+
+    # 调用大模型生成摘要
+    response = client.chat.completions.create(
+        model=MODEL_ID,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=DEFAULT_MAX_TOKENS,
+    )
+    # 返回摘要文本 去除首尾空白 如为空则返回'(空摘要)'
+    return (response.choices[0].message.content or "").strip() or "(空摘要)"
+
+
+# 定义compact_history 函数 对历史消息进行压缩
+def compact_history(messages: list) -> list:
+    # 写入转录文件并保存路径
+    transcript_path = write_transcript(messages)
+    # 打印转录保存的提示
+    print(f"[转录已保存: {transcript_path}]")
+    # 对 历史消息进行摘要压缩
+    recent = messages[-5:]
+    older = messages[:-5]
+
+    summary = summarize_history(older)
+
+    return [
+        {
+            "role": "user",
+            "content": f"[历史摘要]\n\n{summary}",
+        },
+        *recent,
+    ]
+
+
+# reactive_compact 保留最后 5 条：
+# 为了让模型拥有准确的近期上下文，弥补摘要的信息损失。
+
+# reactive_compact 内部修复：
+# 因为 messages[-5:] 可能从 Tool 调用块中间切开。
+
+# agent.py 最后再次修复：
+# 为了保证无论走过哪种压缩路径，发送给模型前的消息链都合法
+
+
+# 定义一个对历史消息进行响应式压缩的函数
+def reactive_compact(messages: list) -> list:
+    transcript_path = write_transcript(messages)
+    summary = summarize_history(messages)
+
+    # 紧急压缩时限制摘要长度
+    summary = summary[:4000]
+
+    return [
+        {
+            "role": "user",
+            "content": (
+                f"[响应式压缩]\n"
+                f"完整历史：{transcript_path}\n\n"
+                f"{summary}"
+            ),
+        }
+    ]
+

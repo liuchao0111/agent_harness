@@ -43,3 +43,12 @@ TOOL_RESULTS_DIR = WORKDIR / ".task_outputs" / "tool-results"
 
 # 设置裁剪消息条数最大条数
 MAX_MESSAGES = 50
+
+# 设置保留最近3条tool消息
+KEEP_RECENT = 3
+
+# 设置上下文限制为100000
+CONTEXT_LIMIT = 100000
+
+# 设置转录目录为工作目录下的 .transcripts目录
+TRANSCRIPT_DIR = WORKDIR / ".transcript"
