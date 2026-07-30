@@ -371,9 +371,18 @@ def compact_history(messages: list) -> list:
     # 打印转录保存的提示
     print(f"[转录已保存: {transcript_path}]")
     # 对 历史消息进行摘要压缩
-    summary = summarize_history(messages)
-    # 返回仅包含摘要文本的新消息列表(以user身份)
-    return [{"role": "user", "content": f"已压缩\n\n{summary}"}]
+    recent = messages[-5:]
+    older = messages[:-5]
+
+    summary = summarize_history(older)
+
+    return [
+        {
+            "role": "user",
+            "content": f"[历史摘要]\n\n{summary}",
+        },
+        *recent,
+    ]
 
 
 # reactive_compact 保留最后 5 条：
@@ -388,20 +397,20 @@ def compact_history(messages: list) -> list:
 
 # 定义一个对历史消息进行响应式压缩的函数
 def reactive_compact(messages: list) -> list:
-    # 写入历史消息到转录文件
     transcript_path = write_transcript(messages)
-    older_messages = messages[:-5]
-    recent_messages = messages[-5:]
-    # 打印转录保存的提示
-    print(f"[转录已保存: {transcript_path}]")
-    # 对历史消息进行摘要 获得总结内容
-    summary = summarize_history(older_messages)
-    # 生成一个压缩后的消息链(带上用户摘要 + 最近5条原始消息) 并进行修正处理
-    return repair_messages_chain(
-        [
-            # 构造一条带有响应式压缩标签和摘要内容的用户消息
-            {"role": "user", "content": f"[响应式压缩]\n\n{summary}"},
-            # 保留消息列表中的最后5条历史消息
-            *recent_messages,
-        ]
-    )
+    summary = summarize_history(messages)
+
+    # 紧急压缩时限制摘要长度
+    summary = summary[:4000]
+
+    return [
+        {
+            "role": "user",
+            "content": (
+                f"[响应式压缩]\n"
+                f"完整历史：{transcript_path}\n\n"
+                f"{summary}"
+            ),
+        }
+    ]
+
