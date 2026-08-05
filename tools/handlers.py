@@ -128,6 +128,27 @@ def run_glob(pattern: str) -> str:
 CURRENT_TODOS: list[dict] = []
 
 
+def todo_update_reminder(rounds_since: int, threshold: int):
+    # 如果当前的轮数小于阈值或者当前 任务为空
+    if rounds_since < threshold or not CURRENT_TODOS:
+        # 找出尚未完成的TODO
+        active = [
+            todo
+            for todo in CURRENT_TODOS
+            if todo.get("status") in ("pending", "in_progress")
+        ]
+        # 如果没有尚未完成的TODO
+        if not active:
+            return None
+        lines = [
+            f"[ToDo提醒]有未完成的任务，且连续{rounds_since}轮未调用todo_write,请更新进度",
+            "当前的任务:",
+        ]
+        for todo in CURRENT_TODOS:
+            lines.append(f"- [{todo.get('status', '?')}] {todo.get('content', '')}")
+        return "\n".join(lines)
+
+
 # 定义run_todo_write函数 ，参数为todos列表，返回字符串
 def run_todo_write(todos: list) -> str:
     # 声明使用全局变量CURRENT_TODOS

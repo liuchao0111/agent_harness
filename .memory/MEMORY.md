@@ -1,0 +1,1 @@
+- [python-dependency-uv](python-dependency-uv.md)-本项目强制使用 uv 管理 Python 依赖

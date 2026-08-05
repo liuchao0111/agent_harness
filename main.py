@@ -20,6 +20,7 @@ def main():
         if query.strip().lower() in ("q", "exit", ""):
             break
         # 触发’UserPromptSubmit‘钩子进行前置处理 返回处理后的用户输入
+
         query = trigger_user_prompt_hooks(query)
         # 将用户的输入添加到历史列表中
         history.append({"role": "user", "content": query})
