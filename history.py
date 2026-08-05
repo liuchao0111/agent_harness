@@ -358,7 +358,7 @@ def summarize_history(messages: list) -> str:
     response = client.chat.completions.create(
         model=MODEL_ID,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=DEFAULT_MAX_TOKENS,
+        max_tokens=1000,
     )
     # 返回摘要文本 去除首尾空白 如为空则返回'(空摘要)'
     return (response.choices[0].message.content or "").strip() or "(空摘要)"
@@ -406,11 +406,6 @@ def reactive_compact(messages: list) -> list:
     return [
         {
             "role": "user",
-            "content": (
-                f"[响应式压缩]\n"
-                f"完整历史：{transcript_path}\n\n"
-                f"{summary}"
-            ),
+            "content": (f"[响应式压缩]\n完整历史：{transcript_path}\n\n{summary}"),
         }
     ]
-

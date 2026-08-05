@@ -55,11 +55,6 @@ BASE_TOOLS = [
     _fn_tool(
         "glob", "按glob模式查找文件", {"pattern": {"type": "string"}}, ["pattern"]
     ),
-]
-
-
-TOOLS = [
-    *BASE_TOOLS,
     _fn_tool(
         "todo_write",
         "创建并管理当前编码会话的任务列表。",
@@ -81,6 +76,11 @@ TOOLS = [
         },
         ["todos"],
     ),
+]
+
+
+TOOLS = [
+    *BASE_TOOLS,
     _fn_tool(
         "spawn_subagent",
         "启动子 Agent 处理复杂子任务。仅返回最终结论。",

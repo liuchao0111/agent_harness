@@ -52,3 +52,19 @@ CONTEXT_LIMIT = 100000
 
 # 设置转录目录为工作目录下的 .transcripts目录
 TRANSCRIPT_DIR = WORKDIR / ".transcript"
+
+
+# 设置记忆目录为工作目录下的.memory 目录
+MEMORY_DIR = WORKDIR / ".memory"
+
+# 创建记忆目录 如果目录不存在
+MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+# 设置记忆索引文件为工作目录下的.memories 目录下的 MEMORY.md文件
+MEMORY_INDEX = MEMORY_DIR / "MEMORY.md"
+
+# 设置记忆合并阈值为10
+CONSOLIDATE_THRESHOLD = 10
+
+# 设置为完成的todo的阈值
+TODO_REMINDER_ROUNDS = 3

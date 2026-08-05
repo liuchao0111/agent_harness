@@ -2,7 +2,7 @@
 import json
 
 # 从config模块导入默认设置的最大token数和主模型
-from config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, MODEL_ID
+from config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, MODEL_ID, TODO_REMINDER_ROUNDS
 
 # 从hooks模块导入trigger_hooks函数
 from history import (
@@ -19,23 +19,30 @@ from hooks import trigger_hooks
 # 从llm模块导入call_llm函数
 from llm import call_llm, is_prompt_too_long_error
 
+# 从memory模块导入load_memories函数
+from memory import consolidate_memories, extract_memories, load_memories
+
 # 从prompt模块导入get_system_prompt函数
 from prompt import get_system_prompt
 
 # 从tools.executor模块导入execute_tool函数
 from tools.executor import execute_tool
+from tools.handlers import todo_update_reminder
 
 # 从utils模块导入assistant_message_dict函数
-from utils import assistant_message_dict
+from utils import assistant_message_dict, message_text
 
 # 定义变量rounds_since_todo 用于记录自上次todo_write调用以来的轮数
 rounds_since_todo = 0
+
+reactive_compact_attempts = 0
 
 
 # 定义agent_loop函数 参数是消息列表
 def agent_loop(messages: list):
     # 声明全局变量rounds_since_todo
     global rounds_since_todo
+    global reactive_compact_attempts
     # 将最大的token数设置为默认值
     max_tokens = DEFAULT_MAX_TOKENS
     # 设置所用模型为主模型P
@@ -44,6 +51,25 @@ def agent_loop(messages: list):
     while True:
         # 获取系统提示词
         system = get_system_prompt()
+        # 加载有关历史消息的记忆内容
+        memories_content = load_memories(messages)
+        # 如果记忆内容存在
+        if memories_content:
+            # 将记忆内容追加到系统提示词后 前面加两个换行符
+            system += "\n\n" + memories_content
+        # 如果有活跃的todo且N轮未更新的 把提醒写入sysytem
+        todo_remainder = todo_update_reminder(rounds_since_todo, TODO_REMINDER_ROUNDS)
+        if todo_remainder:
+            system += "\n\n" + todo_remainder
+            print(f"\x1b[33m][todo提醒] 连续{rounds_since_todo}轮未更新\x1b[0m]")
+        # 创建一个用于存储消息压缩前内容的列表
+        pre_compress = [
+            # 对于messages中的每一个元素m,如果m是字典 则
+            {"role": m.get("role"), "content": message_text(m)}
+            # 遍历messages列表 只处理那些是字典累习惯的元素
+            for m in messages
+            if isinstance(m, dict)
+        ]
         # L3:tool_result_budget 超大tool结果落盘
         messages[:] = tool_result_budget(messages)
         # L1: snip_compact - 消息 > 50 条时保留 头3 + 尾 46, 中间裁掉
@@ -58,25 +84,31 @@ def agent_loop(messages: list):
         # todo 为什么这个位置还要调用 移除独立tool消息的方法
         messages[:] = repair_messages_chain(messages)
         # 如果距离上次 todo 写入的论述大于等于3 且消息列表不为空
-        if rounds_since_todo >= 3 and messages:
-            # 在消息列表中添加一条用户提醒 提示助手更新todo列表
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "<reminder>请更新你的 todo 列表。<reminder>",
-                }
-            )
-            print("\x1b[33m> 请更新你的 todo 列表。\x1b[0m")
-            # 轮数计数器rounds_since_todo 复位为 0
-            rounds_since_todo = 0
+        # if rounds_since_todo >= 3 and messages:
+        #     # 在消息列表中添加一条用户提醒 提示助手更新todo列表
+        #     messages.append(
+        #         {
+        #             "role": "user",
+        #             "content": "<reminder>请更新你的 todo 列表。<reminder>",
+        #         }
+        #     )
+        #     print("\x1b[33m> 请更新你的 todo 列表。\x1b[0m")
+        #     # 轮数计数器rounds_since_todo 复位为 0
+        #     rounds_since_todo = 0
         # 调用大模型获取回复
         try:
             response = call_llm(system, messages, max_tokens, model)
         except Exception as e:
             # 如果捕获到的异常提示是提示词过长的错误
             if is_prompt_too_long_error(e):
+                if reactive_compact_attempts >= 1:
+                    raise RuntimeError(
+                        "响应式压缩后上下文仍然过长，"
+                        "请缩短系统提示词、工具定义或 max_tokens"
+                    ) from e
                 # 对消息列表进行反应式压缩 减少长度
                 messages[:] = reactive_compact(messages)
+                reactive_compact_attempts += 1
                 # 跳过本次循环 进行下一次
                 continue
             raise
@@ -88,6 +120,10 @@ def agent_loop(messages: list):
         messages.append(assistant_message_dict(assistant))
         # 如果助手没有工具可以调用, 则终止循环
         if not assistant.tool_calls:
+            # 提取记忆
+            extract_memories(pre_compress)
+            # 合并记忆
+            consolidate_memories()
             # 调用trigger_hooks函数 触发名为 'Stop'的hook 并传入当前消息列表作为参数 获取返回值force
             force = trigger_hooks("Stop", messages)
             # 判断force是否有值 即hook是否返回了信息需要处理

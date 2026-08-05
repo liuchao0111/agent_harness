@@ -77,3 +77,20 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
 
     # 返回已解析好的meta字典和去除空白后的正文内容
     return meta, parts[2].strip()
+
+
+# 定义一个llm_text函数 接收response对象 返回字符串类型
+def llm_text(response) -> str:
+    # 获取 response的第一个choice的message的content字段 如果为空则用'',去除首尾空白后返回
+    return (response.choices[0].message.content or "").strip()
+
+
+# 定义一个message_text函数 接收一个字典类型的msg参数 返回字符串
+def message_text(msg: dict) -> str:
+    # 从msg字典中获取'content'字段 若没有则默认为空字符串
+    content = msg.get("content", "")
+    # 如果content是字符串类型 则直接返回
+    if isinstance(content, str):
+        return content
+    # 否则将content转换为字符串类型返回
+    return str(content)
