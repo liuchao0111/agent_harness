@@ -406,11 +406,6 @@ def reactive_compact(messages: list) -> list:
     return [
         {
             "role": "user",
-            "content": (
-                f"[响应式压缩]\n"
-                f"完整历史：{transcript_path}\n\n"
-                f"{summary}"
-            ),
+            "content": (f"[响应式压缩]\n完整历史：{transcript_path}\n\n{summary}"),
         }
     ]
-
