@@ -2,7 +2,15 @@
 import json
 
 # 从config模块导入默认设置的最大token数和主模型
-from config import CONTEXT_LIMIT, DEFAULT_MAX_TOKENS, MODEL_ID, TODO_REMINDER_ROUNDS
+from config import (
+    CONTEXT_LIMIT,
+    CONTINUATION_PROMPT,
+    DEFAULT_MAX_TOKENS,
+    ESCALATED_MAX_TOKENS,
+    MAX_RECOVERY_RETRIES,
+    MODEL_ID,
+    TODO_REMINDER_ROUNDS,
+)
 
 # 从hooks模块导入trigger_hooks函数
 from history import (
@@ -17,7 +25,7 @@ from history import (
 from hooks import trigger_hooks
 
 # 从llm模块导入call_llm函数
-from llm import call_llm, is_prompt_too_long_error
+from llm import RecoveryState, call_llm, is_prompt_too_long_error, with_retry
 
 # 从memory模块导入load_memories函数
 from memory import consolidate_memories, extract_memories, load_memories
@@ -35,19 +43,18 @@ from utils import assistant_message_dict, message_text
 # 定义变量rounds_since_todo 用于记录自上次todo_write调用以来的轮数
 rounds_since_todo = 0
 
-reactive_compact_attempts = 0
+# reactive_compact_attempts = 0
 
 
 # 定义agent_loop函数 参数是消息列表
 def agent_loop(messages: list):
     # 声明全局变量rounds_since_todo
     global rounds_since_todo
-    global reactive_compact_attempts
-    # 将最大的token数设置为默认值
+    # 将最大的 token 数设置为默认值，并为本次用户任务保留恢复状态。
     max_tokens = DEFAULT_MAX_TOKENS
-    # 设置所用模型为主模型P
-    model = MODEL_ID
-    # 开始循环 直到return退出
+    state = RecoveryState()
+
+    # 开始循环，直到返回最终回复。
     while True:
         # 获取系统提示词
         system = get_system_prompt()
@@ -81,7 +88,6 @@ def agent_loop(messages: list):
             print("[自动压缩]")
             messages[:] = compact_history(messages)
         # 修复消息链: 补全缺失的tool响应 移除独立的 tool 消息
-        # todo 为什么这个位置还要调用 移除独立tool消息的方法
         messages[:] = repair_messages_chain(messages)
         # 如果距离上次 todo 写入的论述大于等于3 且消息列表不为空
         # if rounds_since_todo >= 3 and messages:
@@ -97,23 +103,87 @@ def agent_loop(messages: list):
         #     rounds_since_todo = 0
         # 调用大模型获取回复
         try:
-            response = call_llm(system, messages, max_tokens, model)
+            response = with_retry(
+                lambda: call_llm(system, messages, max_tokens, state.current_model),
+                state,
+            )
         except Exception as e:
             # 如果捕获到的异常提示是提示词过长的错误
             if is_prompt_too_long_error(e):
-                if reactive_compact_attempts >= 1:
-                    raise RuntimeError(
-                        "响应式压缩后上下文仍然过长，"
-                        "请缩短系统提示词、工具定义或 max_tokens"
-                    ) from e
-                # 对消息列表进行反应式压缩 减少长度
-                messages[:] = reactive_compact(messages)
-                reactive_compact_attempts += 1
-                # 跳过本次循环 进行下一次
-                continue
-            raise
+                # 如果还没有尝试过reactive_compact方法进行压缩
+                if not state.has_attempted_reactive_compact:
+                    # 使用reactive_compact进行消息压缩
+                    messages[:] = reactive_compact(messages)
+                    # 标记已经尝试过reactive_compact
+                    state.has_attempted_reactive_compact = True
+                    # 继续while循环，重新尝试
+                    continue
+                # 如果压缩后仍然过长，则打印错误提示（红色字体）
+                print("  \x1b[31m[不可恢复] compact 后仍然过长\x1b[0m")
+                # 在消息列表中加入assistant角色的错误消息，提示上下文过大
+                messages.append(
+                    {"role": "assistant", "content": "[错误] 上下文过大，无法继续。"}
+                )
+                # 终止函数执行
+                return
+            # 获取异常的类型名称
+            name = type(e).__name__
+            # 打印不可恢复的错误信息，取错误内容的前100个字符（红色字体）
+            print(f"  \x1b[31m[不可恢复] {name}: {str(e)[:100]}\x1b[0m")
+            # 在消息列表中添加assistant角色的错误信息，包含异常类型和前200字符内容
+            messages.append(
+                {"role": "assistant", "content": f"[错误] {name}: {str(e)[:200]}"}
+            )
+            # 终止函数执行
+            return
         # 取出回复中的第一个回复
         choice = response.choices[0]
+        # 判断回复是否因最大长度被截断
+        if choice.finish_reason == "length":
+            # 如果还未升级max_tokens
+            if not state.has_escalated:
+                # 升级max_tokens至更大值
+                max_tokens = ESCALATED_MAX_TOKENS
+                # 标记已升级
+                state.has_escalated = True
+                # 打印升级提示
+                print(
+                    f"  \x1b[33m[max_tokens] 升级 {DEFAULT_MAX_TOKENS} -> {ESCALATED_MAX_TOKENS}\x1b[0m"
+                )
+                # 重新进入循环再次请求
+                continue
+            # 将助手的消息以dict形式加入消息列表
+            messages.append(assistant_message_dict(choice.message))
+            # 如果助手回复里包含工具调用
+            if choice.message.tool_calls:
+                # 遍历所有工具调用
+                for tool_call in choice.message.tool_calls:
+                    # 添加一条 tool 消息，提示输出被截断未执行
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": "[输出被截断，未能执行工具]",
+                        }
+                    )
+                # 跳出本次循环，重新开始
+                continue
+            # 如果还在允许的最大恢复次数范围内
+            if state.recovery_count < MAX_RECOVERY_RETRIES:
+                # 添加一条用户消息，提示助手续写回复
+                messages.append({"role": "user", "content": CONTINUATION_PROMPT})
+                # 恢复计数加一
+                state.recovery_count += 1
+                # 打印续写提示
+                print(
+                    f"  \x1b[33m[max_tokens] 续写 {state.recovery_count}/{MAX_RECOVERY_RETRIES}\x1b[0m"
+                )
+                # 进入下一个循环尝试续写
+                continue
+            # 已达最大恢复重试次数，打印告警
+            print("  \x1b[31m[max_tokens] 已达恢复上限\x1b[0m")
+            # 终止函数执行
+            return
         # 获取助手回复内容
         assistant = choice.message
         # 将助手的回复以dict形式加入消息列表 因为之前的数据是pydantic对象 相当于用ts约束了 但是修改了数据类型 需要重新转位dict
@@ -166,6 +236,9 @@ def agent_loop(messages: list):
                 continue
             # 如果通过权限检查 则执行工具 获取输出结果
             output = execute_tool(name, args)
+            # 成功更新任务列表后，重新开始计算未更新 todo 的轮数。
+            if name == "todo_write" and output.startswith("已更新"):
+                rounds_since_todo = 0
             # 触发 'PostToolUse'钩子 进行后置处理
             trigger_hooks("PostToolUse", name, args, output)
             # 把工具执行结果以特定格式加入消息列表

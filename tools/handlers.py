@@ -129,24 +129,22 @@ CURRENT_TODOS: list[dict] = []
 
 
 def todo_update_reminder(rounds_since: int, threshold: int):
-    # 如果当前的轮数小于阈值或者当前 任务为空
-    if rounds_since < threshold or not CURRENT_TODOS:
-        # 找出尚未完成的TODO
-        active = [
-            todo
-            for todo in CURRENT_TODOS
-            if todo.get("status") in ("pending", "in_progress")
-        ]
-        # 如果没有尚未完成的TODO
-        if not active:
-            return None
-        lines = [
-            f"[ToDo提醒]有未完成的任务，且连续{rounds_since}轮未调用todo_write,请更新进度",
-            "当前的任务:",
-        ]
-        for todo in CURRENT_TODOS:
-            lines.append(f"- [{todo.get('status', '?')}] {todo.get('content', '')}")
-        return "\n".join(lines)
+    # 找出尚未完成的 TODO
+    active = [
+        todo
+        for todo in CURRENT_TODOS
+        if todo.get("status") in ("pending", "in_progress")
+    ]
+    # 没有活跃任务，或尚未达到提醒阈值时不提醒
+    if not active or rounds_since < threshold:
+        return None
+    lines = [
+        f"[ToDo提醒]有未完成的任务，且连续{rounds_since}轮未调用todo_write,请更新进度",
+        "当前的任务:",
+    ]
+    for todo in CURRENT_TODOS:
+        lines.append(f"- [{todo.get('status', '?')}] {todo.get('content', '')}")
+    return "\n".join(lines)
 
 
 # 定义run_todo_write函数 ，参数为todos列表，返回字符串
@@ -188,7 +186,7 @@ TOOL_HANDLERS = {
     "bash": run_bash,  # 执行shell命令
     "read_file": run_read,  # 读取文件内容
     "write_file": run_write,  # 写入文件内容
-    "eidt_file": run_edit,  # 编辑文件内容
+    "edit_file": run_edit,  # 编辑文件内容
     "glob": run_glob,  # 通配符路径匹配
     "todo_write": run_todo_write,  # 创建并管理当前编码会话的任务列表
     "load_skill": load_skill,  # 按名称加载技能的完整内容

@@ -73,7 +73,7 @@ def get_system_prompt() -> str:
     # 如果没有命中
     _last_memory_mtime = mtime
     # 内部调用技能文本拼接及总装配函数
-    _last_prompt = _assemble_system_prompt(_skills_text(), _memory_index_text)
+    _last_prompt = _assemble_system_prompt(_skills_text(), _memory_index_text())
     return _last_prompt
 
 

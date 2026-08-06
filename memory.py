@@ -83,7 +83,7 @@ def select_relevant_memories(messages: list, max_items: int = 5) -> list[str]:
     except Exception:
         return []
     # 兜底的方案 近的消息中长度大于3的单词降级检索
-    keywords = [word.lower for word in recent.split() if len(word) > 3]
+    keywords = [word.lower() for word in recent.split() if len(word) > 3]
     selected = []
     for f in files:
         text = (f["name"] + " " + f["description"]).lower()

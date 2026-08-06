@@ -68,3 +68,27 @@ CONSOLIDATE_THRESHOLD = 10
 
 # 设置为完成的todo的阈值
 TODO_REMINDER_ROUNDS = 3
+
+
+# 设置最大重试次数
+MAX_RETRIES = 10
+
+# 设置基础延迟时间为500毫秒
+BASE_DELAY_MS = 500
+
+# 定义连续发生529错误的最大次数
+MAX_CONSECUTIVE_529 = 3
+
+# 从环境变量中获取备用模型的名称
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL")
+
+# 定义升级后的最大token数
+ESCALATED_MAX_TOKENS = 64000
+
+# 定义最大恢复重试次数为3
+MAX_RECOVERY_RETRIES = 3
+
+# 定义续写提示
+CONTINUATION_PROMPT = (
+    "输出 token 上限已达到。直接继续 — 不要道歉或复述，从思路中断处接上。"
+)
