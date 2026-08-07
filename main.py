@@ -13,7 +13,7 @@ def main():
         try:
             # 获取用户输入 带有提示符
             query = input("\x1b[36m>> \x1b[0m")
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             # 异常时输出循环
             break
         # 如果输入的内容为空，或者用户输入了q quit exit 空串 都退出循环

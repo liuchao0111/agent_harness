@@ -92,3 +92,10 @@ MAX_RECOVERY_RETRIES = 3
 CONTINUATION_PROMPT = (
     "输出 token 上限已达到。直接继续 — 不要道歉或复述，从思路中断处接上。"
 )
+
+
+# 设置任务目录为工作目录下的 .tasks 目录
+TASKS_DIR = WORKDIR / ".tasks"
+
+# 创建任务目录 如果目录不存在
+TASKS_DIR.mkdir(parents=True, exist_ok=True)

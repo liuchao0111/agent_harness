@@ -39,3 +39,15 @@ load_memories() 读取记忆正文
 追加到 System Prompt
   ↓
 主 LLM 同时看到当前任务和相关长期记忆
+
+### Skills：Agent 的“能力说明书 / 操作手册” Skill 不是当前项目的事实，也不是待办事项。它更像一份预先写好的 SOP（标准操作流程）：
+###  History 压缩用于控制当前 messages 对话历史的体积，其中 Tool 输出是重点压缩对象；
+###  Task System 用于让 Agent 跨会话保存和恢复“任务计划、状态、依赖与进度”，它不是原始对话记录，也不是模型本身的内部记忆 它保存的是执行状态
+### Memory 这是长期背景知识。
+### TODO 是本次会话的简单清单
+
+
+<!-- 学习task system 后续继续 -->
+1.createtask
+2.listtask
+3. claimtask

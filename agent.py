@@ -8,7 +8,6 @@ from config import (
     DEFAULT_MAX_TOKENS,
     ESCALATED_MAX_TOKENS,
     MAX_RECOVERY_RETRIES,
-    MODEL_ID,
     TODO_REMINDER_ROUNDS,
 )
 
@@ -103,11 +102,16 @@ def agent_loop(messages: list):
         #     rounds_since_todo = 0
         # 调用大模型获取回复
         try:
+            # bind loop variables into defaults so the retry closure uses the
+            # values from this iteration rather than late-binding the loop
+            # variables (especially `system`).
             response = with_retry(
-                lambda: call_llm(system, messages, max_tokens, state.current_model),
+                lambda system=system, messages=messages, max_tokens=max_tokens, model=state.current_model: (
+                    call_llm(system, messages, max_tokens, model)
+                ),
                 state,
             )
-        except Exception as e:
+        except (RuntimeError, OSError, ValueError) as e:
             # 如果捕获到的异常提示是提示词过长的错误
             if is_prompt_too_long_error(e):
                 # 如果还没有尝试过reactive_compact方法进行压缩

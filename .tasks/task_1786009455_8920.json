@@ -1,0 +1,10 @@
+{
+  "id": "task_1786009455_8920",
+  "subject": "create API endpoints",
+  "description": "基于数据库 Schema 创建 API 接口",
+  "status": "pending",
+  "owner": null,
+  "blockedBy": [
+    "task_1786009365_2587"
+  ]
+}
