@@ -55,6 +55,17 @@ BASE_TOOLS = [
     _fn_tool(
         "glob", "按glob模式查找文件", {"pattern": {"type": "string"}}, ["pattern"]
     ),
+]
+
+
+TOOLS = [
+    *BASE_TOOLS,
+    _fn_tool(
+        "spawn_subagent",
+        "启动子 Agent 处理复杂子任务。仅返回最终结论。",
+        {"description": {"type": "string"}},
+        ["description"],
+    ),
     _fn_tool(
         "todo_write",
         "创建并管理当前编码会话的任务列表。",
@@ -76,21 +87,46 @@ BASE_TOOLS = [
         },
         ["todos"],
     ),
-]
-
-
-TOOLS = [
-    *BASE_TOOLS,
-    _fn_tool(
-        "spawn_subagent",
-        "启动子 Agent 处理复杂子任务。仅返回最终结论。",
-        {"description": {"type": "string"}},
-        ["description"],
-    ),
     _fn_tool(
         "load_skill", "按名称加载技能的完整内容", {"name": {"type": "string"}}, ["name"]
     ),
     _fn_tool(
         "compact", "摘要较早对话以释放上下文空间。", {"focus": {"type": "string"}}, []
+    ),
+    _fn_tool(
+        "create_task",
+        "创建新任务，可选 blockedBy 依赖。",
+        {
+            "subject": {"type": "string"},
+            "description": {"type": "string"},
+            "blockedBy": {"type": "array", "items": {"type": "string"}},
+        },
+        ["subject"],
+    ),
+    _fn_tool(
+        "list_tasks",
+        "列出所有任务的状态、负责人与依赖",
+        {},
+        [],
+    ),
+    _fn_tool(
+        "get_task",
+        "按ID获取任务完整详情。",
+        {
+            "task_id": {"type": "string"},
+        },
+        ["task_id"],
+    ),
+    _fn_tool(
+        "claim_task",
+        "认领 pending 任务,设置 owner 并改为 in_progress",
+        {"task_id": {"type": "string"}},
+        ["task_id"],
+    ),
+    _fn_tool(
+        "complete_task",
+        "完成 in_progress任务 , 并报告下游解阻任务",
+        {"task_id": {"type": "string"}},
+        ["task_id"],
     ),
 ]

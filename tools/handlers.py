@@ -12,6 +12,15 @@ from config import TEXT_ENCODING, WORKDIR
 # 从 skills模块 导入 load_skill函数
 from skills import load_skill
 
+# 从tasks模块导入create_task函数
+from tasks import (
+    claim_task,
+    complete_task,
+    create_task,
+    get_task,
+    list_tasks,
+)
+
 # 从utils模块中导入decode_subprocess_output函数 用于解码子进程输出
 from utils import decode_subprocess_output, safe_path
 
@@ -181,6 +190,72 @@ def run_todo_write(todos: list) -> str:
     return f"已更新 {len(CURRENT_TODOS)} 个任务"
 
 
+# 定义 run_create_taks函数 用于创建新任务
+def run_create_task(
+    subject: str, description: str = "", blockedBy: list[str] | None = None
+) -> str:
+    # 调用create_task函数 创建任务对象
+    task = create_task(subject, description, blockedBy)
+    # 若存在阻塞依赖项则格式化为依赖描述字符串 否则为空字符串
+    deps = f" (blockedBy: {', '.join(blockedBy)}) " if blockedBy else ""
+    # 以蓝色ANSI颜色打印创建成功的任务主题及依赖信息
+    print(f"  \x1b[34m[创建] {task.subject}{deps}\x1b[0m")
+    # 返回已创建任务的ID、主题及依赖信息提示
+    return f"已创建 {task.id}: {task.subject}{deps}"
+
+
+# 定义run_list_tasks函数 用于列出所有任务 返回字符串
+def run_list_tasks() -> str:
+    # 调用list_tasks获取所有任务列表
+    tasks = list_tasks()
+    # 如果任务列表为空
+    if not tasks:
+        # 返回暂无任务的信息
+        return "暂无任务 使用create_task添加"
+    # 初始化用于存储显示行的空列表
+    lines = []
+    # 遍历所有任务
+    for t in tasks:
+        # 根据任务状态获取对应的中文状态标签
+        icon = {
+            # pending状态对应“等待中”
+            "pending": "等待中",
+            # in_progress状态对应“处理中”
+            "in_progress": "处理中",
+            # completed状态对应“已完成”
+            "completed": "已完成",
+        }.get(t.status, "?")
+        # 若任务有阻塞依赖则格式化依赖信息，否则为空字符串
+        deps = f" (blockedBy: {' ,'.join(t.blockedBy)})" if t.blockedBy else ""
+        # 若任务有负责人则格式化负责人信息 否则为空字符串
+        owner = f" [{t.owner}]" if t.owner else ""
+        # 将格式化后的任务信息行加入lines列表
+        lines.append(f"  {icon} {t.id}: {t.subject} [{t.status}]{owner}{deps}")
+    # 将所有行用换行符拼接成字符串后返回
+    return "\n".join(lines)
+
+
+# 定义run_get_task函数 按任务ID获取任务详情 返回字符串
+def run_get_task(task_id: str) -> str:
+    # 尝试获取指定ID任务
+    try:
+        # 调用get_task(task_id)
+        return get_task(task_id)
+    except FileNotFoundError:
+        # 返回未找到任务的错误提示
+        return f"错误: 未找到任务{task_id}"
+
+
+# 定义 run_claim_task函数 认领指定任务 返回字符串
+def run_claim_task(task_id: str) -> str:
+    return claim_task(task_id, owner="agent")
+
+
+# 定义 run_complete_task函数 完成指定任务 返回字符串
+def run_complete_task(task_id: str) -> str:
+    return complete_task(task_id)
+
+
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
 TOOL_HANDLERS = {
     "bash": run_bash,  # 执行shell命令
@@ -190,4 +265,9 @@ TOOL_HANDLERS = {
     "glob": run_glob,  # 通配符路径匹配
     "todo_write": run_todo_write,  # 创建并管理当前编码会话的任务列表
     "load_skill": load_skill,  # 按名称加载技能的完整内容
+    "create_task": run_create_task,  # 创建新任务
+    "list_tasks": run_list_tasks,
+    "get_task": run_get_task,  # 按 ID 获取任务完整详情
+    "claim_task": run_claim_task,  # 认领 pending 任务，设置 owner 并改为 in_progress
+    "complete_task": run_complete_task,  # 完成 in_progress 任务，并报告下游解阻任务
 }
