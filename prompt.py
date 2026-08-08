@@ -12,7 +12,8 @@ PROMPT_SECTIONS = {
         "所有破坏性操作需要用户批准。"
         "开始多步骤任务前，先用 todo_write 规划步骤；执行过程中及时更新状态。"
         "遇到复杂子问题时，使用 spawn_subagent 工具派生子Agent。"
-        "上下文过长时可以使用 compact 工具"
+        "上下文过长时可以使用 compact 工具。"
+        "bash 支持 run_in_background 参数以在后台运行耗时命令。"
     ),
     # 'workspace' 键，对应当前的工作目录描述
     "workspace": f"工作目录 {WORKDIR}",

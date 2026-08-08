@@ -17,6 +17,7 @@ from tasks import (
     claim_task,
     complete_task,
     create_task,
+    delete_task,
     get_task,
     list_tasks,
 )
@@ -26,11 +27,11 @@ from utils import decode_subprocess_output, safe_path
 
 
 # 定义run_bash函数,接收一个字符串类型参数command,并返回字符串
-def run_bash(command: str) -> str:
+def run_bash(command: str, run_in_background: bool = False) -> str:
     # 如果当前操作系统是Windows系统 并且命令是'date'(忽略前后空白并转位小写)
-    if os.name == "nt" and command.strip().lower() == "date":
-        # 将命令改为Windows下同时输出日期和时间的命令
-        command = "date /t & time /t"
+    # if os.name == "nt" and command.strip().lower() == "date":
+    #     # 将命令改为Windows下同时输出日期和时间的命令
+    #     command = "date /t & time /t"
     # 定义危险命令的列表
     dangerous = ["rm -rf / ", "sudo", "shutdown", "rebot", "> /dev/"]
     # 如果命令中包含任何一个危险的命令
@@ -256,6 +257,10 @@ def run_complete_task(task_id: str) -> str:
     return complete_task(task_id)
 
 
+def run_delete_task(task_id: str) -> str:
+    return delete_task(task_id)
+
+
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
 TOOL_HANDLERS = {
     "bash": run_bash,  # 执行shell命令
@@ -270,4 +275,5 @@ TOOL_HANDLERS = {
     "get_task": run_get_task,  # 按 ID 获取任务完整详情
     "claim_task": run_claim_task,  # 认领 pending 任务，设置 owner 并改为 in_progress
     "complete_task": run_complete_task,  # 完成 in_progress 任务，并报告下游解阻任务
+    "delete_task": run_delete_task,  # 删除任务
 }

@@ -1,6 +1,12 @@
 # 导入json库 用于处理json数据
 import json
 
+from background import (
+    collect_background_results,
+    should_run_background,
+    start_background_task,
+)
+
 # 从config模块导入默认设置的最大token数和主模型
 from config import (
     CONTEXT_LIMIT,
@@ -55,6 +61,14 @@ def agent_loop(messages: list):
 
     # 开始循环，直到返回最终回复。
     while True:
+        # 从后台收集通知消息(如果有的话)
+        bg_notifications = collect_background_results()
+        # 如果收集到了后台通知
+        if bg_notifications:
+            # 将收集到的后台通知以用户消息格式追加到message消息列表
+            messages.append({"role": "user", "content": "\n\n".join(bg_notifications)})
+            # 打印注入后台通知的数量并以绿色高亮显示
+            print(f"  \x1b[32m[注入] {len(bg_notifications)} 条后台通知\x1b[0m")
         # 获取系统提示词
         system = get_system_prompt()
         # 加载有关历史消息的记忆内容
@@ -238,8 +252,22 @@ def agent_loop(messages: list):
                 )
                 # 跳过本次循环，继续处理下一个工具调用
                 continue
+            # 判断是否应该以后台任务方式运行工具
+            if should_run_background(name, args):
+                # 启动后台任务 并获取后台任务ID
+                bg_id = start_background_task(tool_call.id, name, args)
+                # 组织后台任务已启动的输出消息 包括任务ID 命令 通知方式
+                # todo 后续增加 task_notification
+                output = f"后台任务{bg_id}已启动,命令: {args.get('command', '')},完成后将通过"
+            # 如果不是后台任务 则直接运行
+            else:
+                try:
+                    # 执行工具函数，并获取输出
+                    output = execute_tool(name, args)
+                except (RuntimeError, ValueError, OSError) as e:
+                    # 如果执行过程中发生已知异常，将异常信息作为输出内容
+                    output = f"错误：{type(e).__name__}: {e}"
             # 如果通过权限检查 则执行工具 获取输出结果
-            output = execute_tool(name, args)
             # 成功更新任务列表后，重新开始计算未更新 todo 的轮数。
             if name == "todo_write" and output.startswith("已更新"):
                 rounds_since_todo = 0

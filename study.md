@@ -47,7 +47,11 @@ load_memories() 读取记忆正文
 ### TODO 是本次会话的简单清单
 
 
-<!-- 学习task system 后续继续 -->
-1.createtask
-2.listtask
-3. claimtask
+
+需求	选择
+执行普通且很快的 Python 函数	直接调用
+后台执行 Python I/O 任务	threading.Thread
+执行外部终端命令，且需要马上得到结果	subprocess.run()
+执行外部终端命令，但不希望主程序等待	threading.Thread + subprocess.run()
+启动外部命令后立即返回，并自己管理其状态、输出和终止	subprocess.Popen()
+Python CPU 密集型任务要利用多核	multiprocessing 或进程池，而不是普通线程

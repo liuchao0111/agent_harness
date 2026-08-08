@@ -144,7 +144,8 @@ def complete_task(task_id: str) -> str:
     unblocked = [
         t.subject
         for t in list_tasks()
-        if t.status == "pending" and task_id in t.blockedBy and can_start(t.id)
+        # if t.status == "pending" and task_id in t.blockedBy and can_start(t.id)
+        if t.status == "pending" and t.blockedBy and can_start(t.id)
     ]
     # 在控制台输出任务完成信息
     print(f"  \x1b[32m[完成] {task.subject} ✓\x1b[0m")
@@ -155,4 +156,34 @@ def complete_task(task_id: str) -> str:
         msg += f"\n已解阻: {', '.join(unblocked)}"
         print(f"  \x1b[33m[解阻] {', '.join(unblocked)}\x1b[0m")
     # 返回最终的信息
+    return msg
+
+
+# 删除任务
+def delete_task(task_id):
+    task_path = _task_path(task_id)
+    if not task_path.exists():
+        return f"任务{task_id}不存在 无法删除"
+    task = load_task(task_id)
+    # 获取依赖项
+    dependents = []
+    for t in list_tasks():
+        if task_id in t.blockedBy:
+            dependents.append(t)
+    # 如果有依赖任务 则判断是否可以删除
+    if dependents:
+        incompleted_deps = [t for t in dependents if t.status != "completed"]
+        if incompleted_deps:
+            dep_info = " , ".join([f"{t.id}({t.subject})" for t in incompleted_deps])
+            return f"任务{task_id}被 依赖切未完成, 无法删除, 依赖的依赖:{dep_info}"
+        print(f"[提醒] 任务{task_id}被已经完成的任务依赖，将清理依赖关系")
+        # 删除任务 task_id 前，把其他已完成任务中对它的依赖记录移除，避免删除后留下一个指向不存在任务的依赖。
+        for t in dependents:
+            t.blockedBy = [d for d in t.blockedBy if d != task_id]
+            save_task(t)
+            print(f"- 已经清理了{t.id}依赖")
+    # 删除文件
+    task_path.unlink()
+    msg = f"已经删除任务{task_id}({task.subject})"
+    print(msg)
     return msg

@@ -25,7 +25,12 @@ def _fn_tool(
 # 定义一个工具列表 包含一个通过_fn_tool函数生成的工具 bash命令执行
 BASE_TOOLS = [
     # 定义 bash 命令行工具，参数为 command（字符串类型）
-    _fn_tool("bash", "执行一条shell命令", {"command": {"type": "string"}}, ["command"]),
+    _fn_tool(
+        "bash",
+        "执行一条 shell 命令。耗时操作可设 run_in_background=true 在后台运行。",
+        {"command": {"type": "string"},'run_in_background': {'type': 'boolean', 'default': False}},
+        ["command"],
+    ),
     # 定义读取文件内容的工具 参数为path(字符串类型) 和 limit(整数类型), 其中 path为必需
     _fn_tool(
         "read_file",
@@ -126,6 +131,12 @@ TOOLS = [
     _fn_tool(
         "complete_task",
         "完成 in_progress任务 , 并报告下游解阻任务",
+        {"task_id": {"type": "string"}},
+        ["task_id"],
+    ),
+    _fn_tool(
+        "delete_task",
+        "删除任务",
         {"task_id": {"type": "string"}},
         ["task_id"],
     ),
