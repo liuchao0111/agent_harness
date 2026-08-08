@@ -100,35 +100,35 @@ def start_background_task(tool_call_id: str, name: str, args: dict) -> str:
 
 # 收集所有已完成的后台任务结果
 def collect_background_results() -> list[str]:
-    # 首先加锁 找出所有状态为completed的任务id
+    # 首先加锁，找出所有状态为completed的任务id
     with background_lock:
         ready_ids = [
             bid
             for bid, task in background_tasks.items()
             if task["status"] == "completed"
         ]
-        # 用于存放通知消息的列表
-        notifications = []
-        # 遍历所有已经完成任务的id
-        for bg_id in ready_ids:
-            # 加锁 从任务和结果字典中弹出对应项
-            with background_lock:
-                task = background_tasks.pop(bg_id)
-                output = background_results.pop(bg_id, "")
-                # 如果输出内容超过200字符，则只取前200个字符作为概要
-            summary = output[:200] if len(output) > 200 else output
-            # 生成一个任务完成的通知字符串 并加入通知列表
-            notifications.append(
-                f"<task_notification>\n"
-                f"<task_id>{bg_id}</task_id>\n"
-                f"<status>completed</status>\n"
-                f"<command>{task['command']}</command>\n"
-                f"<summary>{summary}</summary>\n"
-                f"</task_notification>"
-            )
-            # 打印后台完成的信息，包含任务id和命令摘要及输出字符数
-            print(
-                f"  \x1b[32m[后台完成] {bg_id}: {task['command'][:40]}（{len(output)} 字符）\x1b[0m"
-            )
-        # 返回所有通知消息的列表
-        return notifications
+    # 用于存放通知消息的列表
+    notifications = []
+    # 遍历所有已经完成的所有任务id
+    for bg_id in ready_ids:
+        # 加锁，从任务和结果字典中弹出对应项
+        with background_lock:
+            task = background_tasks.pop(bg_id)
+            output = background_results.pop(bg_id, "")
+        # 如果输出内容超过200字符，则只取前200个字符作为概要
+        summary = output[:200] if len(output) > 200 else output
+        # 生成一个任务完成的通知字符串，并加入通知列表
+        notifications.append(
+            f"<task_notification>\n"
+            f"  <task_id>{bg_id}</task_id>\n"
+            f"  <status>completed</status>\n"
+            f"  <command>{task['command']}</command>\n"
+            f"  <summary>{summary}</summary>\n"
+            f"</task_notification>"
+        )
+        # 打印后台完成的信息，包含任务id和命令摘要及输出字符数
+        print(
+            f"  \x1b[32m[后台完成] {bg_id}: {task['command'][:40]}（{len(output)} 字符）\x1b[0m"
+        )
+    # 返回所有通知消息的列表
+    return notifications
