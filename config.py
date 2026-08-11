@@ -99,3 +99,7 @@ TASKS_DIR = WORKDIR / ".tasks"
 
 # 创建任务目录 如果目录不存在
 TASKS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# 定时任务持久化文件
+DURABLE_PATH = WORKDIR / ".scheduled_.tasks.json"

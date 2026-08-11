@@ -1,5 +1,4 @@
 # 导入json模块用于处理JSON数据
-# 导入json模块用于处理JSON数据
 import json
 import random
 

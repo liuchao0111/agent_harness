@@ -14,6 +14,7 @@ PROMPT_SECTIONS = {
         "遇到复杂子问题时，使用 spawn_subagent 工具派生子Agent。"
         "上下文过长时可以使用 compact 工具。"
         "bash 支持 run_in_background 参数以在后台运行耗时命令。"
+        "定时任务可使用 schedule_cron / list_crons / cancel_cron。"
     ),
     # 'workspace' 键，对应当前的工作目录描述
     "workspace": f"工作目录 {WORKDIR}",

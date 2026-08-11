@@ -47,11 +47,68 @@ load_memories() 读取记忆正文
 ### TODO 是本次会话的简单清单
 
 
+# tasks 工作流程
+创建任务 A：搭建数据库
+状态：pending
 
-需求	选择
-执行普通且很快的 Python 函数	直接调用
-后台执行 Python I/O 任务	threading.Thread
-执行外部终端命令，且需要马上得到结果	subprocess.run()
-执行外部终端命令，但不希望主程序等待	threading.Thread + subprocess.run()
-启动外部命令后立即返回，并自己管理其状态、输出和终止	subprocess.Popen()
-Python CPU 密集型任务要利用多核	multiprocessing 或进程池，而不是普通线程
+创建任务 B：实现登录功能
+状态：pending
+依赖：blockedBy = [任务 A]
+
+尝试认领 B
+  ↓
+can_start(B)
+  ↓
+发现 A 还不是 completed
+  ↓
+B 不能开始，保持 pending
+
+认领 A
+  ↓
+A: pending → in_progress
+
+完成 A
+  ↓
+A: in_progress → completed
+
+再次认领 B
+  ↓
+can_start(B)
+  ↓
+发现所有依赖均为 completed
+  ↓
+B: pending → in_progress
+
+
+
+# 调度定时工作流程
+
+程序启动
+  ↓
+load_durable_jobs()
+  ↓
+从 .scheduled_.tasks.json 读取持久化 CronJob
+  ↓
+放入 schedule_jobs
+  ↓
+cron_scheduler_loop() 永远循环检查 schedule_jobs
+  ↓
+时间不匹配
+  ↓
+什么也不做，cron_queue 仍为空
+  ↓
+时间匹配
+  ↓
+把“这一次触发事件”放入 cron_queue
+  ↓
+_queue_processor_loop() 发现 cron_queue 不为空
+  ↓
+调用 Agent
+  ↓
+agent_loop() 中 consume_cron_queue()
+  ↓
+取出这一次待执行事件并清空 cron_queue
+  ↓
+Agent 执行 prompt
+  ↓
+下一分钟 cron_scheduler_loop() 再次检查同一个 schedule_jobs 里的任务

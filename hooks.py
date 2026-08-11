@@ -95,7 +95,7 @@ def log_hook(name: str, args: dict):
     # 取参数前两项并转换为字符串用于预览
     args_preview = str(list(args.values())[:2])[:60]
     # 打印钩子触发信息
-    print(f"\x1b[90m[HOOK] {name}({args_preview})\x1b[0m")
+    print(f"\x1b[90m[HOOK] PreToolUse {name}({args_preview})\x1b[0m")
     # 无特殊行为 直接返回None
     return None
 
@@ -105,7 +105,9 @@ def large_output_hook(name: str, args: dict, output):
     # 判断输出长度是否超过10w字符
     if len(str(output)) > 100000:
         # 打印输出过大警告
-        print(f"\x1b[33m[HOOK] ⚠ {name} 输出过大：{len(str(output))} 字符\x1b[0m")
+        print(
+            f"\x1b[33m[HOOK] ⚠ large_output_hook {name} 输出过大：{len(str(output))} 字符\x1b[0m"
+        )
     # 返回None
     return None
 

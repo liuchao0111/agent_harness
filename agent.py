@@ -18,6 +18,7 @@ from config import (
 )
 
 # 从hooks模块导入trigger_hooks函数
+from cron import consume_cron_queue
 from history import (
     compact_history,
     estimate_size,
@@ -61,6 +62,26 @@ def agent_loop(messages: list):
 
     # 开始循环，直到返回最终回复。
     while True:
+        # 先消费已经到点的 Cron 任务
+        cron_jobs = consume_cron_queue()
+        if cron_jobs:
+            cron_notifications = []
+
+            for job in cron_jobs:
+                cron_notifications.append(
+                    f"<cron_task>\n"
+                    f"<id>{job.id}</id>\n"
+                    f"<cron>{job.cron}</cron>\n"
+                    f"<recurring>{job.recurring}</recurring>\n"
+                    f"<prompt>{job.prompt}</prompt>\n"
+                    f"</cron_task>"
+                )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "\n\n".join(cron_notifications),
+                }
+            )
         # 从后台收集通知消息(如果有的话)
         bg_notifications = collect_background_results()
         # 如果收集到了后台通知
