@@ -28,7 +28,10 @@ BASE_TOOLS = [
     _fn_tool(
         "bash",
         "执行一条 shell 命令。耗时操作可设 run_in_background=true 在后台运行。",
-        {"command": {"type": "string"},'run_in_background': {'type': 'boolean', 'default': False}},
+        {
+            "command": {"type": "string"},
+            "run_in_background": {"type": "boolean", "default": False},
+        },
         ["command"],
     ),
     # 定义读取文件内容的工具 参数为path(字符串类型) 和 limit(整数类型), 其中 path为必需
@@ -139,5 +142,16 @@ TOOLS = [
         "删除任务",
         {"task_id": {"type": "string"}},
         ["task_id"],
+    ),
+    _fn_tool(
+        "schedule_cron",
+        "调度cron任务。cron为5段：分 时 日 月 周",
+        {
+            "cron": {"type": "string", "description": "5段cron表达式"},
+            "prompt": {"type": "string", "description": "触发时注入消息"},
+            "recurring": {"type": "boolean", "description": "true=循环 fasle=单次"},
+            "durable": {"type": "boolean", "description": "true=持久化到磁盘"},
+        },
+        ["cron", "prompt"],
     ),
 ]

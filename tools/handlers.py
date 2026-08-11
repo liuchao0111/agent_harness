@@ -10,6 +10,7 @@ import subprocess
 from config import TEXT_ENCODING, WORKDIR
 
 # 从 skills模块 导入 load_skill函数
+from cron import cancel_job, cron_lock, schedule_job, scheduled_jobs
 from skills import load_skill
 
 # 从tasks模块导入create_task函数
@@ -261,6 +262,51 @@ def run_delete_task(task_id: str) -> str:
     return delete_task(task_id)
 
 
+# 定义调度定时任务函数
+def run_schedule_cron(
+    cron: str,  # cron表达式,
+    prompt: str,  # 提示词,
+    recurring: bool = True,  # 是否循环,
+    durable: bool = True,  # 是否持久化
+) -> str:
+    # 调用schedule_job 安排定时任务 返回结果
+    result = schedule_job(cron, prompt, recurring, durable)
+    # 如果是字符串 表示出错
+    if isinstance(result, str):
+        # 返回错误提示
+        return f"错误: {result}"
+    # 返回调度成功信息 包裹id 表达式和prompt
+    return f"已调度 {result.id}: '{cron}' ->{prompt}"
+
+
+# 定义列出所有 cron定时任务的函数
+def run_list_crons() -> str:
+    # 使用锁确保并发安全 读取所有 scheduled_jobs
+    with cron_lock:
+        jobs = list(scheduled_jobs.values())
+    # 如果没有任何任务 返回空提示
+    if not jobs:
+        return "暂无 cron 任务。 使用schedule_cron添加"
+    # 初始化结果字符串列表
+    lines = []
+    # 遍历所有定时任务
+    for j in jobs:
+        # 根据 recurring 标记区分“循环”或“单次”
+        tag = "循环" if j.recurring else "单次"
+        # 根据 durable 标记区分“持久化”或“会话”
+        dur = "持久化" if j.durable else "会话"
+        # 拼接任务的信息字符串并加入列表
+        lines.append(f"  {j.id}: '{j.cron}' → {j.prompt[:40]} [{tag}, {dur}]")
+    # 返回所有任务拼接后的字符串
+    return "\n".join(lines)
+
+
+# 定义取消定时任务的函数
+def run_cancel_cron(job_id: str) -> str:
+    # 调用 cancel_job 并返回结果
+    return cancel_job(job_id)
+
+
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
 TOOL_HANDLERS = {
     "bash": run_bash,  # 执行shell命令
@@ -276,4 +322,7 @@ TOOL_HANDLERS = {
     "claim_task": run_claim_task,  # 认领 pending 任务，设置 owner 并改为 in_progress
     "complete_task": run_complete_task,  # 完成 in_progress 任务，并报告下游解阻任务
     "delete_task": run_delete_task,  # 删除任务
+    "schedule_cron": run_schedule_cron,  # 创建调度定时任务
+    "list_crons": run_list_crons,  # 列出所有定时任务
+    "cancel_cron": run_cancel_cron,  # 取消定时任务
 }
