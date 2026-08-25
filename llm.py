@@ -100,7 +100,7 @@ def retry_delay(attempt: int, retry_after=None) -> float:
             #  尝试将 retry_after 转为float 并返回
             return float(retry_after)
         # 如果转换失败则忽略错误
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             pass
     # 计算基础延时 指数退避 最大不超过32000毫秒 并转为秒
     base = min(BASE_DELAY_MS * 2**attempt, 32000) / 1000
@@ -166,6 +166,7 @@ def with_retry(fn, state: RecoveryState):
                 time.sleep(delay)
                 # 继续下一次重试
                 continue
+            raise
             # 其他已知API相关异常会在此处理，未知异常应被抛出以便上层处理
         except Exception:
             # 如果不是以上错误则抛出异常

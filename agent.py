@@ -38,6 +38,7 @@ from memory import consolidate_memories, extract_memories, load_memories
 
 # 从prompt模块导入get_system_prompt函数
 from prompt import get_system_prompt
+from teams import inject_lead_inbox
 
 # 从tools.executor模块导入execute_tool函数
 from tools.executor import execute_tool
@@ -82,6 +83,8 @@ def agent_loop(messages: list):
                     "content": "\n\n".join(cron_notifications),
                 }
             )
+        # 注入lead_inbox
+        inject_lead_inbox(messages)
         # 从后台收集通知消息(如果有的话)
         bg_notifications = collect_background_results()
         # 如果收集到了后台通知

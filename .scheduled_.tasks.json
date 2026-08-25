@@ -1,9 +1,0 @@
-[
-  {
-    "id": "cron_380589",
-    "cron": "* * * * *",
-    "prompt": "请在终端执行以下命令打印当前日期和时间：echo %date% %time%",
-    "recurring": true,
-    "durable": true
-  }
-]

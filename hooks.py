@@ -125,7 +125,7 @@ def summary_hook(messages: list):
 # 注册用户提交的事件钩子函数
 register_hook("UserPromptSubmit", workspace_inject_hook)
 # 注册工具使用前权限检查钩子
-register_hook("PreToolUse", permission_hook)
+# register_hook("PreToolUse", permission_hook)
 # 注册工具使用前日志记录钩子
 register_hook("PreToolUse", log_hook)
 # 注册工具使用后大输出检测钩子

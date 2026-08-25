@@ -22,6 +22,19 @@ from tasks import (
     get_task,
     list_tasks,
 )
+from teams import (
+    BUS,
+    LEAD_NAME,
+    consume_inbox,
+    current_agent,
+    format_inbox_messages,
+    is_teammate_running,
+    run_request_plan,
+    run_request_shutdown,
+    run_review_plan,
+    run_submit_plan,
+    spawn_teammate_thread,
+)
 
 # 从utils模块中导入decode_subprocess_output函数 用于解码子进程输出
 from utils import decode_subprocess_output, safe_path
@@ -307,6 +320,38 @@ def run_cancel_cron(job_id: str) -> str:
     return cancel_job(job_id)
 
 
+# 定义取消定时任务的函数
+def run_spawn_teammate(name: str, role: str, prompt: str) -> str:
+    # 调用 spawn_teammate_thread 启动队友 agent，传递名字、角色和 prompt
+    return spawn_teammate_thread(name, role, prompt)
+
+
+# 定义函数 启动一个队友agent线程
+def run_send_message(to: str, content: str) -> str:
+    # 发送方固定为当前会话身份 不可伪造
+    from_agent = current_agent.get()
+    # 使用BUS发送消息
+    BUS.send(from_agent, to, content)
+    print(f"已从 {from_agent} 发送给 {to}")
+    if to != LEAD_NAME and not is_teammate_running(to):
+        # 返回已写入收件箱但队友未运行的提示
+        return f"已从{from_agent} 写入{to} 的收件箱, 但该队友未在运行 , 请spawn_teammate 重启后才会被读取"
+    # 返回发送结果的字符说明
+    return f"已从 {from_agent} 发送给 {to}"
+
+
+# 定义函数 仅允许当前Agent 自己的收件箱(Lead 只能读 lead)
+def run_check_inbox() -> str:
+    # 当前会话身份
+    name = current_agent.get()
+    # Lead 与队友都只能消费自己的收件箱 避免抢走对方消息
+    msgs = consume_inbox(name)
+    # 如果收件箱为空 返回提示信息
+    if not msgs:
+        return f" ({name} 的收件箱为空)"
+    return format_inbox_messages(msgs)
+
+
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
 TOOL_HANDLERS = {
     "bash": run_bash,  # 执行shell命令
@@ -325,4 +370,11 @@ TOOL_HANDLERS = {
     "schedule_cron": run_schedule_cron,  # 创建调度定时任务
     "list_crons": run_list_crons,  # 列出所有定时任务
     "cancel_cron": run_cancel_cron,  # 取消定时任务
+    "spawn_teammate": run_spawn_teammate,  # 在后台线程启动队友 Agent。
+    "send_message": run_send_message,  # 通过 MessageBus 向队友发送消息
+    "check_inbox": run_check_inbox,  # 仅检查当前Agent 自己的收件箱
+    "request_shutdown": run_request_shutdown,  # 请求队友优雅关闭
+    "request_plan": run_request_plan,  # 要求队友提交计划供审核
+    "submit_plan": run_submit_plan,  # 向Lead提交计划待审批
+    "review_plan": run_review_plan,  # 按request_id 批准或拒绝已提交的计划
 }

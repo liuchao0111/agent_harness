@@ -35,8 +35,7 @@ class CronJob:
 
 
 # 定义调度中的任务字典 key为任务id value为CronJob对象
-schedule_jobs: dict[str:CronJob] = {}
-
+scheduled_jobs: dict[str:CronJob] = {}
 # 定义cron执行队列，存储等待消费的 CronJob 对象
 cron_queue: list[CronJob] = []
 
@@ -175,7 +174,7 @@ def validate_cron(cron_expr: str) -> str | None:
 # 保存持久化任务到硬盘
 def save_durable_jobs():
     # 只保存标记了durable的任务
-    durable = [asdict(j) for j in schedule_jobs.values() if j.durable]
+    durable = [asdict(j) for j in scheduled_jobs.values() if j.durable]
     # 写入到指定任务
     DURABLE_PATH.write_text(
         json.dumps(durable, indent=2, ensure_ascii=False), encoding=TEXT_ENCODING
@@ -197,9 +196,9 @@ def load_durable_jobs():
             if err:
                 print(f"  \x1b[31m[cron] 跳过无效任务 {job.id}: {err}\x1b[0m")
                 continue
-            schedule_jobs[job.id] = job
+            scheduled_jobs[job.id] = job
         # 统计有效任务数并打印加载成功提示
-        valid = [j for j in jobs if j["id"] in schedule_jobs]
+        valid = [j for j in jobs if j["id"] in scheduled_jobs]
         if valid:
             print(f"  \x1b[35m[cron] 已加载 {len(valid)} 个持久化任务\x1b[0m")
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as e:
@@ -228,7 +227,7 @@ def schedule_job(
     )
     # 写入任务池 (线程安全)
     with cron_lock:
-        schedule_jobs[job.id] = job
+        scheduled_jobs[job.id] = job
     # 若需持久化 写入硬盘
     if durable:
         save_durable_jobs()
@@ -248,7 +247,7 @@ def cron_scheduler_loop():
         minute_marker = now.strftime("%Y-%m-%d %H:%M")
         # 锁定后穷举所有调度任务
         with cron_lock:
-            for job in list(schedule_jobs.values()):
+            for job in list(scheduled_jobs.values()):
                 try:
                     # 检测当前时间是否符合cron表达式
                     if (
@@ -266,7 +265,7 @@ def cron_scheduler_loop():
                         )
                     #  若任务不需要循环 触发一次则移除
                     if not job.recurring:
-                        schedule_jobs.pop(job.id)
+                        scheduled_jobs.pop(job.id)
                         # 若需要持久化 移除后保存
                         if job.recurring:
                             save_durable_jobs()
@@ -303,7 +302,7 @@ def consume_cron_queue() -> list[CronJob]:
 def cancel_job(job_id: str) -> str:
     # 从任务池移除该任务
     with cron_lock:
-        job = schedule_jobs.pop(job_id, None)
+        job = scheduled_jobs.pop(job_id, None)
         # 若找不到则返回提示
         if not job:
             return f"未找到任务 {job_id}"

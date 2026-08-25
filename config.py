@@ -103,3 +103,17 @@ TASKS_DIR.mkdir(parents=True, exist_ok=True)
 
 # 定时任务持久化文件
 DURABLE_PATH = WORKDIR / ".scheduled_.tasks.json"
+
+
+# 队友消息邮箱目录
+
+MAILBOX_DIR = WORKDIR / ".mailboxes"
+
+# 创建队友消息邮箱目录 如果目录不存在 则创建
+MAILBOX_DIR.mkdir(exist_ok=True)
+
+
+MAILBOX_BACKUP_DIR = WORKDIR / ".mailboxes_backup"
+
+# 创建队友消息邮箱目录 如果目录不存在 则创建
+MAILBOX_BACKUP_DIR.mkdir(exist_ok=True)
