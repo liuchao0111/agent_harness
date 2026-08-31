@@ -17,6 +17,7 @@ from config import (
     MAILBOX_BACKUP_DIR,
     MAILBOX_DIR,  # 邮箱目录
     MODEL_ID,  # 主模型名称
+    TEAMMATE_WAIT_TIMEOUT,  # Lead 等待队友结果的超时时间
     TEXT_ENCODING,  # 文本编码方式
     WORKDIR,  # 工作目录
     client,  # 大语言模型客户端
@@ -49,11 +50,17 @@ current_agent: ContextVar[str] = ContextVar("current_agent", default="lead")
 #  active_teammates: 队友名 → 线程对象
 active_teammates: dict[str, threading.Thread] = {}
 
+# 已 spawn 、尚未收到 type=result的队友(Lead 收尾屏障用)
+pending_teammate_results: set[str] = set()
+
 # agent 最大工作回合数
 WORK_MAX_ROUNDS = 10
 
 # MessageBus 文件读写锁
 _bus_lock = threading.Lock()
+
+# wait / 屏障轮训间隔
+_WAIT_POLL_INTERVAL = 0.5
 
 
 # 使用dataclass装饰器定义一个协议状态的数据结构
@@ -425,11 +432,13 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
     thread = threading.Thread(target=run, daemon=True)
     # 将线程注册到active_teammates字典
     active_teammates[name] = thread
+    # 标记待回收 result , 供Lead 收尾屏障等待
+    pending_teammate_results.add(name)
     # 启动线程
     thread.start()
     # 启动后打印青色控制台日志
     print(f"  \x1b[36m[队友] 已启动 spawn_teammate_thread {name}，角色 {role}\x1b[0m")
-    return f"队友 '{name}' 已启动 spawn_teammate_thread ，角色 {role}"
+    return f"队友 '{name}' 已启动，角色 {role}。完成后将向 lead 发送 result；可用 await_teammates 等待。"
 
 
 # 收件箱消息格式化为文本字符串(含 type / request_id 便于 review_plan)
@@ -486,6 +495,21 @@ def match_response(response_type: str, request_id: str, approve: bool) -> None:
     )
 
 
+def _mark_results_received(msgs: list[dict]) -> None:
+    """根据收件箱中的result消息 清楚pending_teammate_results 集合中的名字"""
+    for msg in msgs:
+        if msg.get("type") == "result":
+            sender = msg.get("from")
+            if sender and sender in pending_teammate_results:
+                pending_teammate_results.discard(sender)
+                print(f"  \x1b[32m[屏障] 收到队友 {sender} 的结果，清除屏障\x1b[0m")
+
+
+def list_pending_teammates() -> list[str]:
+    """返回当前等待结果的队友名字列表"""
+    return list(pending_teammate_results)
+
+
 # 定义函数 读取Lead收件箱。 参数route_protocol 表示是否需要路由协议响应
 def consume_lead_inbox(route_protocol: bool = True) -> list[dict]:
     # 读取 LEAD_NAME 的收件箱消息列表
@@ -493,6 +517,8 @@ def consume_lead_inbox(route_protocol: bool = True) -> list[dict]:
     # 如果消息列表为空 则直接返回空列表
     if not msgs:
         return []
+    # result 到达即解除屏障等待
+    _mark_results_received(msgs)
     # 如果需要路由协议响应
     if route_protocol:
         # 遍历所有消息
@@ -514,16 +540,17 @@ def consume_lead_inbox(route_protocol: bool = True) -> list[dict]:
 
 
 # 注入lead的收件箱消息到对话消息列表
-def inject_lead_inbox(message: list) -> list:
+def inject_lead_inbox(message: list) -> int:
     # 调用consume_lead_inbox读取lead收件箱消息，开启路由协议
     inbox = consume_lead_inbox(route_protocol=True)
     # 如果没有 返回0
     if not inbox:
-        return
+        return 0
     # 把收件箱内容格式化为一条user消息 添加到对话消息列表
     message.append({"role": "user", "content": format_inbox_messages(inbox)})
     # 控制台打印注入了多少条消息
     print(f"  \x1b[33m[收件箱] 已注入 {len(inbox)} 条消息\x1b[0m")
+    return len(inbox)
 
 
 # 判断指定名字的队友线程是否在运行
@@ -534,6 +561,89 @@ def is_teammate_running(name: str) -> bool:
     return thread is not None and thread.is_alive()
 
 
+# 等待所有队友完成任务 返回完成数量
+def wait_for_teammates(
+    names: list[str] | None = None, timeout: float | None = None
+) -> str:
+    """
+    阻塞等待指定(或全部 pending) 队友的result
+    等待期间轮训消费 lead 收件箱中的消息 返回汇总文本供tool_result 使用
+    """
+    timeout = TEAMMATE_WAIT_TIMEOUT if timeout is None else timeout
+    targets = set(names) if names else set(pending_teammate_results)
+    if not targets:
+        return "没有待等待的队友 result"
+    # 只等待仍在pending中的名字
+    targets &= pending_teammate_results
+    if not targets:
+        return "所有队友 result 已收到"
+
+    print(
+        f"  \x1b[35m[屏障] 等待队友 result: {', '.join(sorted(targets))}"
+        f"（超时 {timeout:.0f}s）\x1b[0m"
+    )
+
+    deadline = time.time() + timeout
+    collected: list[dict] = []
+    while time.time() < deadline:
+        inbox = consume_lead_inbox(route_protocol=False)
+        if inbox:
+            collected.extend(inbox)
+        remaining = targets & pending_teammate_results
+        if not remaining:
+            break
+        # 线程已死但尚未读到result 再读一轮后由调用方prune
+        if all(not is_teammate_running(n) for n in targets):
+            inbox = consume_lead_inbox(route_protocol=False)
+            if inbox:
+                collected.extend(inbox)
+            # 仍无 result 则视为异常结束 解除挂起以免死等
+            for n in list(remaining):
+                if n in pending_teammate_results and not is_teammate_running(n):
+                    pending_teammate_results.discard(n)
+                    print(f"  \x1b[31m[屏障] 队友 {n} 已结束，清除屏障\x1b[0m")
+            break
+        time.sleep(_WAIT_POLL_INTERVAL)
+    remaining = sorted(targets & pending_teammate_results)
+    parts = []
+    if collected:
+        parts.append(format_inbox_messages(collected))
+    if remaining:
+        parts.append(
+            f"仍有 {len(remaining)} 个队友未完成：{', '.join(sorted(remaining))}"
+        )
+    else:
+        parts.append("所有队友 result 已收到")
+    return "\n".join(parts)
+
+
+def apply_teammate_stop_barrier(messages: list) -> str | None:
+    """
+    Lead 无 tool_calls 准备 Stop 时调用。
+    若仍有 pending result：阻塞等待 → 注入收件箱 → 返回应追加的 user 提示；
+    无 pending 则返回 None（允许真正退出）。
+    """
+    pending = list_pending_teammates()
+    if not pending:
+        # 退出前再吸一次吃到的信(不强制continue，除非强制有新信)
+        n = inject_lead_inbox(messages)
+        if n:
+            return "[队友屏障] 退出前从收件箱注入了迟到消息，请据此更新回复后再结束。"
+        return None
+    status = wait_for_teammates(names=pending, timeout=TEAMMATE_WAIT_TIMEOUT)
+    inject_lead_inbox(messages)
+    still = list_pending_teammates()
+    hint = (
+        f"[队友屏障] {status}\n"
+        "请根据收件箱中的队友结果汇总回复用户；"
+        "不要在未看到 result 时声称任务已完成。"
+    )
+    if still:
+        hint += f"\n仍在等待: {', '.join(still)}"
+    print("  \x1b[35m[屏障] Stop 已拦截，注入汇总后继续一轮\x1b[0m")
+    return hint
+
+
 # 定义函数 读取Lead收件箱
 def consume_inbox(agent_name: str) -> list[dict]:
     # 读取LEAD_NAME 的收件箱消息列表
@@ -541,6 +651,9 @@ def consume_inbox(agent_name: str) -> list[dict]:
     # 如果消息列表为空 则直接返回空列表
     if not msgs:
         return []
+    # Lead 侧消费时同样解除 pending
+    if agent_name == LEAD_NAME:
+        _mark_results_received(msgs)
     # 返回读取到的所有消息
     return msgs
 

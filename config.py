@@ -117,3 +117,9 @@ MAILBOX_BACKUP_DIR = WORKDIR / ".mailboxes_backup"
 
 # 创建队友消息邮箱目录 如果目录不存在 则创建
 MAILBOX_BACKUP_DIR.mkdir(exist_ok=True)
+
+# Lead 收尾屏障: 等待队友 result 的最长秒数
+TEAMMATE_WAIT_TIMEOUT = 120
+
+# Stop 时自动屏障最多触发次数(每轮先 wait 再给 Lead 一次汇总机会)
+TEAMMATE_BARRIER_ROUNDS = 1

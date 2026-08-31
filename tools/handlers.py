@@ -34,6 +34,7 @@ from teams import (
     run_review_plan,
     run_submit_plan,
     spawn_teammate_thread,
+    wait_for_teammates,
 )
 
 # 从utils模块中导入decode_subprocess_output函数 用于解码子进程输出
@@ -352,6 +353,15 @@ def run_check_inbox() -> str:
     return format_inbox_messages(msgs)
 
 
+def run_await_teammates(
+    names: list[str] | None = None, timeout: float | None = None
+) -> str:
+    """阻塞等待队友 result；仅 Lead 应调用。"""
+    if current_agent.get() != LEAD_NAME:
+        return "错误：仅 lead 可调用 await_teammates"
+    return wait_for_teammates(names=names, timeout=timeout)
+
+
 # 定义 TOOL_HANDLERS字典 , 将‘bash’ 设置为'run_bash'函数
 TOOL_HANDLERS = {
     "bash": run_bash,  # 执行shell命令
@@ -373,6 +383,7 @@ TOOL_HANDLERS = {
     "spawn_teammate": run_spawn_teammate,  # 在后台线程启动队友 Agent。
     "send_message": run_send_message,  # 通过 MessageBus 向队友发送消息
     "check_inbox": run_check_inbox,  # 仅检查当前Agent 自己的收件箱
+    "await_teammates": run_await_teammates,  # 阻塞等待队友 result。
     "request_shutdown": run_request_shutdown,  # 请求队友优雅关闭
     "request_plan": run_request_plan,  # 要求队友提交计划供审核
     "submit_plan": run_submit_plan,  # 向Lead提交计划待审批

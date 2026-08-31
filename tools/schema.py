@@ -202,6 +202,22 @@ TOOLS = [
         },
         ["request_id", "approve"],
     ),
+    _fn_tool(
+        "await_teammates",
+        "阻塞等待队友完成并发送 result。可指定 names；默认等待全部待回收队友。派工后、向用户汇报前应调用。",
+        {
+            "names": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "要等待的队友名列表；省略则等待全部 pending",
+            },
+            "timeout": {
+                "type": "number",
+                "description": "最长等待秒数，默认见配置 TEAMMATE_WAIT_TIMEOUT",
+            },
+        },
+        [],
+    ),
 ]
 
 

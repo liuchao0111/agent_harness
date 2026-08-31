@@ -16,7 +16,8 @@ PROMPT_SECTIONS = {
         + "bash 支持 run_in_background 参数以在后台运行耗时命令。"
         + "定时任务可使用 schedule_cron / list_crons / cancel_cron。"
         + "遇到复杂子问题时 可使用spawn_teammate 委派队友，"
-        + "teammate团队协作可使用spawn_teammate / send_message / check_inbox，"
+        + "teammate团队协作可使用spawn_teammate / send_message / check_inbox / await_teammates"
+        + "spawn_teammate 后应用 await_teammates 等待 result，再向用户汇报；未收到 result 前不要声称完成。"
         + "request_plan 要求队友 submit_plan后,用 review_plan(request_id,approve) 批准或者拒绝，"
         + "任务结束或需回收资源时用request_shutdown 请求队友优雅退出。"
     ),

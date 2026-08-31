@@ -14,6 +14,7 @@ from config import (
     DEFAULT_MAX_TOKENS,
     ESCALATED_MAX_TOKENS,
     MAX_RECOVERY_RETRIES,
+    TEAMMATE_BARRIER_ROUNDS,
     TODO_REMINDER_ROUNDS,
 )
 
@@ -38,7 +39,9 @@ from memory import consolidate_memories, extract_memories, load_memories
 
 # 从prompt模块导入get_system_prompt函数
 from prompt import get_system_prompt
-from teams import inject_lead_inbox
+
+# 从teams模块导入apply_teammate_stop_barrier函数
+from teams import apply_teammate_stop_barrier, inject_lead_inbox
 
 # 从tools.executor模块导入execute_tool函数
 from tools.executor import execute_tool
@@ -60,7 +63,8 @@ def agent_loop(messages: list):
     # 将最大的 token 数设置为默认值，并为本次用户任务保留恢复状态。
     max_tokens = DEFAULT_MAX_TOKENS
     state = RecoveryState()
-
+    # 本回合已触发的队友收尾屏障次数(防止无限拦截Stop)
+    barrier_rounds = 0
     # 开始循环，直到返回最终回复。
     while True:
         # 先消费已经到点的 Cron 任务
@@ -107,7 +111,7 @@ def agent_loop(messages: list):
             system += "\n\n" + todo_remainder
             print(f"\x1b[33m][todo提醒] 连续{rounds_since_todo}轮未更新\x1b[0m]")
         # 创建一个用于存储消息压缩前内容的列表
-        pre_compress = [
+        pre_compress: list[dict[str, str | None]] = [
             # 对于messages中的每一个元素m,如果m是字典 则
             {"role": m.get("role"), "content": message_text(m)}
             # 遍历messages列表 只处理那些是字典累习惯的元素
@@ -232,6 +236,14 @@ def agent_loop(messages: list):
         messages.append(assistant_message_dict(assistant))
         # 如果助手没有工具可以调用, 则终止循环
         if not assistant.tool_calls:
+            # 队友收尾屏障: 仍有未收到的 result 时先等待再给 Lead 一轮汇总
+            # (须在 Stop hook 之前 ， 避免误报回话结束)
+            if barrier_rounds < TEAMMATE_BARRIER_ROUNDS:
+                barrier_msg = apply_teammate_stop_barrier(messages)
+                if barrier_msg:
+                    barrier_rounds += 1
+                    messages.append({"role": "user", "content": barrier_msg})
+                    continue
             # 提取记忆
             extract_memories(pre_compress)
             # 合并记忆
