@@ -26,6 +26,9 @@ from config import (
 # 从history模块中导入repair_message_chain函数
 from history import repair_messages_chain
 
+# 从tasks模块导入scan_unclaimed_tasks , claim_task
+from tasks import claim_task, scan_unclaimed_tasks
+
 # 从utils模块导入assistant_message_dict方法
 from utils import assistant_message_dict
 
@@ -50,8 +53,10 @@ current_agent: ContextVar[str] = ContextVar("current_agent", default="lead")
 #  active_teammates: 队友名 → 线程对象
 active_teammates: dict[str, threading.Thread] = {}
 
-# 已 spawn 、尚未收到 type=result的队友(Lead 收尾屏障用)
+# 已 spawn 、尚未收到当前代 result 的队友(Lead 收尾屏障用)
 pending_teammate_results: set[str] = set()
+# 每个队友名对应的当前 spawn 代际，避免同名重启时上一轮残留 result 误清屏障
+_teammate_spawn_ids: dict[str, str] = {}
 
 # agent 最大工作回合数
 WORK_MAX_ROUNDS = 10
@@ -147,6 +152,41 @@ class MessageBus:
             inbox.unlink()
         # 返回消息列表
         return msgs
+
+    def drop_stale_results(
+        self, to_agent: str, from_agent: str, keep_spawn_id: str
+    ) -> int:
+        """在同一把锁下丢掉 to_agent 收件箱里 from_agent 的过期 result，避免同名重启误清屏障。"""
+        inbox = MAILBOX_DIR / f"{to_agent}.jsonl"
+        with _bus_lock:
+            if not inbox.exists():
+                return 0
+            msgs = [
+                json.loads(line)
+                for line in inbox.read_text(encoding=TEXT_ENCODING).splitlines()
+                if line.strip()
+            ]
+            kept: list[dict] = []
+            dropped = 0
+            for msg in msgs:
+                meta = msg.get("metadata") or {}
+                if (
+                    msg.get("type") == "result"
+                    and msg.get("from") == from_agent
+                    and meta.get("spawn_id") != keep_spawn_id
+                ):
+                    dropped += 1
+                    continue
+                kept.append(msg)
+            if dropped:
+                if kept:
+                    inbox.write_text(
+                        "".join(json.dumps(m, ensure_ascii=False) + "\n" for m in kept),
+                        encoding=TEXT_ENCODING,
+                    )
+                else:
+                    inbox.unlink(missing_ok=True)
+            return dropped
 
 
 # 实例话消息总线对象
@@ -256,7 +296,32 @@ def idle_poll(agent_name: str, messages: list) -> str:
             )
         print(f"  \x1b[36m[idle] {agent_name} 收到 inbox 消息\x1b[0m")
         return "work"
-
+    # 检查是否有未被认领的任务
+    unclaimed_tasks = scan_unclaimed_tasks()
+    # 如果存在未被认领的任务
+    if unclaimed_tasks:
+        # 认领第一个未被认领的任务
+        task = unclaimed_tasks[0]
+        # 尝试用 agent_name 认领任务
+        result = claim_task(task.id)
+        # 如果认领成功 （返回值以"已认领"开头）
+        if result.startswith("已认领"):
+            # 将自动认领的信息记入messages
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"<auto-claimed>任务 {task.id}: {task.subject}</auto-claimed>"
+                    ),
+                }
+            )
+            # 打印绿色日志说明任务已认领
+            print(
+                f"  \x1b[32m[idle] {agent_name} 自动认领任务 {task.id} ({task.subject})\x1b[0m"
+            )
+            return "work"
+        # 如果认领失败，打印黄色失败提示
+        print(f"  \x1b[33m[idle] {agent_name} 认领失败: {result}\x1b[0m")
     # 提交计划后必须等待 Lead 的明确审批，不应因普通空闲超时而退出。
     if is_waiting_for_plan_approval(agent_name):
         print(f"  \x1b[33m[idle] {agent_name} 仍在等待计划审批，继续等待\x1b[0m")
@@ -281,6 +346,14 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         active_teammates.pop(name, None)
         # 打印黄色日志说明旧线程被移除，可以重新启动
         print(f"  \x1b[33m[队友] {name} 旧线程已退出，允许重新启动\x1b[0m")
+    # 先切换代际再清收件箱，避免并发 consume 把上一轮 result 当成本轮完成
+    spawn_id = f"spawn_{name}_{time.time_ns()}"
+    _teammate_spawn_ids[name] = spawn_id
+    dropped = BUS.drop_stale_results(LEAD_NAME, name, spawn_id)
+    if dropped:
+        print(
+            f"  \x1b[33m[屏障] 已丢弃 {name} 的 {dropped} 条过期 result，避免误清新一轮等待\x1b[0m"
+        )
     # 构建 system prompt 指示Ai队友身份及工作指令
     system = (
         f"你是 '{name}'，角色为 {role}。"
@@ -291,6 +364,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         "收到 shutdown_request 时会自动关闭。"
         "需要 Lead 审批时，调用 submit_plan 提交计划；提交后保持等待，直到收到 plan_approval_response。"
         "收到批准后继续执行计划；收到拒绝后根据反馈修改并重新提交。"
+        "使用工具完成任务。你可以从看板列出未被认领且所有依赖已完成任务。"
     )
 
     # 队友线程主执行函数
@@ -419,20 +493,21 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                         summary = content
                         # 找到后立即跳出循环
                         break
-            # 通过消息总线将 summary 作为结果发送给lead
-            BUS.send(name, LEAD_NAME, summary, "result")
+            # 通过消息总线将 summary 作为结果发送给lead（带上本轮 spawn_id）
+            BUS.send(name, LEAD_NAME, summary, "result", {"spawn_id": spawn_id})
             # 打印队友已结束的绿色提示信息
             print(f"  \x1b[32m[队友] {name} spawn_teammate_thread 已结束\x1b[0m")
         finally:
             print(f"  \x1b[32m[最终] {name} spawn_teammate_thread finally\x1b[0m")
             current_agent.reset(identity_token)
-            active_teammates.pop(name, None)
+            # 只清理本线程登记，避免同名新线程已被 spawn 后被旧 finally 误删
+            if active_teammates.get(name) is threading.current_thread():
+                active_teammates.pop(name, None)
 
     # 创建线程对象 目标为run函数 设置为守护线程
     thread = threading.Thread(target=run, daemon=True)
     # 将线程注册到active_teammates字典
     active_teammates[name] = thread
-    # 标记待回收 result , 供Lead 收尾屏障等待
     pending_teammate_results.add(name)
     # 启动线程
     thread.start()
@@ -495,14 +570,31 @@ def match_response(response_type: str, request_id: str, approve: bool) -> None:
     )
 
 
-def _mark_results_received(msgs: list[dict]) -> None:
-    """根据收件箱中的result消息 清楚pending_teammate_results 集合中的名字"""
+def _apply_result_messages(msgs: list[dict]) -> list[dict]:
+    """按 spawn 代际匹配 result：当前代清除 pending，过期 result 丢弃不注入对话。"""
+    kept: list[dict] = []
     for msg in msgs:
-        if msg.get("type") == "result":
-            sender = msg.get("from")
-            if sender and sender in pending_teammate_results:
-                pending_teammate_results.discard(sender)
-                print(f"  \x1b[32m[屏障] 收到队友 {sender} 的结果，清除屏障\x1b[0m")
+        if msg.get("type") != "result":
+            kept.append(msg)
+            continue
+        sender = msg.get("from")
+        spawn_id = (msg.get("metadata") or {}).get("spawn_id")
+        expected = _teammate_spawn_ids.get(sender) if sender else None
+        if expected is not None and spawn_id != expected:
+            print(
+                f"  \x1b[33m[屏障] 忽略 {sender} 的过期 result"
+                f"（spawn_id={spawn_id}，当前={expected}）\x1b[0m"
+            )
+            continue
+        if (
+            sender
+            and sender in pending_teammate_results
+            and (expected is None or spawn_id == expected)
+        ):
+            pending_teammate_results.discard(sender)
+            print(f"  \x1b[32m[屏障] 收到队友 {sender} 的结果，清除屏障\x1b[0m")
+        kept.append(msg)
+    return kept
 
 
 def list_pending_teammates() -> list[str]:
@@ -517,8 +609,8 @@ def consume_lead_inbox(route_protocol: bool = True) -> list[dict]:
     # 如果消息列表为空 则直接返回空列表
     if not msgs:
         return []
-    # result 到达即解除屏障等待
-    _mark_results_received(msgs)
+    # result 到达即解除屏障等待；过期同名 result 不计入
+    msgs = _apply_result_messages(msgs)
     # 如果需要路由协议响应
     if route_protocol:
         # 遍历所有消息
@@ -586,7 +678,7 @@ def wait_for_teammates(
     deadline = time.time() + timeout
     collected: list[dict] = []
     while time.time() < deadline:
-        inbox = consume_lead_inbox(route_protocol=False)
+        inbox = consume_lead_inbox(route_protocol=True)
         if inbox:
             collected.extend(inbox)
         remaining = targets & pending_teammate_results
@@ -594,7 +686,7 @@ def wait_for_teammates(
             break
         # 线程已死但尚未读到result 再读一轮后由调用方prune
         if all(not is_teammate_running(n) for n in targets):
-            inbox = consume_lead_inbox(route_protocol=False)
+            inbox = consume_lead_inbox(route_protocol=True)
             if inbox:
                 collected.extend(inbox)
             # 仍无 result 则视为异常结束 解除挂起以免死等
@@ -651,9 +743,9 @@ def consume_inbox(agent_name: str) -> list[dict]:
     # 如果消息列表为空 则直接返回空列表
     if not msgs:
         return []
-    # Lead 侧消费时同样解除 pending
+    # Lead 侧消费时同样按代际解除 pending，并丢掉过期 result
     if agent_name == LEAD_NAME:
-        _mark_results_received(msgs)
+        msgs = _apply_result_messages(msgs)
     # 返回读取到的所有消息
     return msgs
 

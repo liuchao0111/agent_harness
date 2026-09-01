@@ -20,6 +20,9 @@ PROMPT_SECTIONS = {
         + "spawn_teammate 后应用 await_teammates 等待 result，再向用户汇报；未收到 result 前不要声称完成。"
         + "request_plan 要求队友 submit_plan后,用 review_plan(request_id,approve) 批准或者拒绝，"
         + "任务结束或需回收资源时用request_shutdown 请求队友优雅退出。"
+        + "团队协作：spawn_teammate 启动自主队友（idle 时轮询看板并自动认领任务）；"
+        + "create_task 创建任务后队友可在 idle 阶段自动认领；"
+        + "send_message 向队友发消息；check_inbox 查看队友回信（含协议响应状态）。"
     ),
     # 'workspace' 键，对应当前的工作目录描述
     "workspace": f"工作目录 {WORKDIR}",

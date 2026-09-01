@@ -101,12 +101,19 @@ def create_task(
 
 
 # 认领任务
-def claim_task(task_id: str, owner: str = "agent") -> str:
+def claim_task(task_id: str) -> str:
+    # 延迟导入，避免与 teams 循环依赖
+    from teams import LEAD_NAME, current_agent
+
     # 加载任务
     task = load_task(task_id)
+    agent_name = current_agent.get()
     # 如果任务状态不是pending 则无法认领
     if task.status != "pending":
         return f"任务 {task_id} 状态为 {task.status} , 无法认领"
+    # 如果任务已被认领 (owner 不为空) 返回被谁认领的提示
+    if task.owner:
+        return f"任务 {task_id} 已被 {task.owner} 认领"
     # 如果任务被依赖阻塞 则无法认领
     if not can_start(task_id):
         # 找出所有未完成的依赖
@@ -117,13 +124,13 @@ def claim_task(task_id: str, owner: str = "agent") -> str:
         ]
         return f"被阻塞，依赖: {deps}"
     # 设置负责人
-    task.owner = owner
+    task.owner = agent_name or LEAD_NAME
     # 设置任务状态为进行中
     task.status = "in_progress"
     # 保存任务 更新任务状态
     save_task(task)
     # 在控制台输出认领提示
-    print(f"  \x1b[36m[认领] {task.subject} → in_progress（负责人: {owner}）\x1b[0m")
+    print(f"  \x1b[36m[认领] {task.subject} → in_progress（负责人: {task.owner}）\x1b[0m")
     # 返回认领结果字符串
     return f"已认领 {task.id}（{task.subject}）"
 
@@ -186,3 +193,15 @@ def delete_task(task_id):
     msg = f"已经删除任务{task_id}({task.subject})"
     print(msg)
     return msg
+
+
+# 查找pending 、 无owner 、 无依赖 的任务
+# 定义一个返回未被认领且所有依赖已完成任务的函数
+def scan_unclaimed_tasks() -> list[Task]:
+    # 遍历所有任务 筛选出状态为pending 没有负责人且开始的任务
+    return [
+        # 对每个任务t进行判断并加入返回列表
+        t
+        for t in list_tasks()
+        if t.status == "pending" and not t.owner and can_start(t.id)
+    ]

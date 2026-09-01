@@ -264,12 +264,17 @@ def run_get_task(task_id: str) -> str:
 
 # 定义 run_claim_task函数 认领指定任务 返回字符串
 def run_claim_task(task_id: str) -> str:
-    return claim_task(task_id, owner="agent")
+    return claim_task(task_id)
 
 
 # 定义 run_complete_task函数 完成指定任务 返回字符串
 def run_complete_task(task_id: str) -> str:
     return complete_task(task_id)
+
+
+# 定义run_scan_unclaimed_tasks函数 扫描未被认领且所有依赖已完成任务 返回字符串
+def run_scan_unclaimed_tasks(task_id: str) -> str:
+    return claim_task(task_id)
 
 
 def run_delete_task(task_id: str) -> str:

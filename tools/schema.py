@@ -150,6 +150,14 @@ TOOLS = [
         ["task_id"],
     ),
     _fn_tool(
+        "claim_task",
+        "认领 pending 任务，设置 owner 并改为 in_progress。owner 为认领者 Agent 名称",
+        {
+            "task_id": {"type": "string"},
+        },
+        ["task_id"],
+    ),
+    _fn_tool(
         "schedule_cron",
         "调度cron任务。cron为5段：分 时 日 月 周",
         {
