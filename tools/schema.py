@@ -226,6 +226,33 @@ TOOLS = [
         },
         [],
     ),
+    _fn_tool(
+        "create_worktree",
+        "创建隔离的 git worktree 及独立分支 wt/{name}。可选 task_id 绑定任务（不改任务状态）。",
+        {
+            "name": {
+                "type": "string",
+                "description": "worktree 名称，仅 [A-Za-z0-9._-]{1,64}",
+            },
+            "task_id": {"type": "string", "description": "可选，绑定到该任务"},
+        },
+        ["name"],
+    ),
+    _fn_tool(
+        "remove_worktree",
+        "删除 worktree。有未提交变更时拒绝，除非 discard_changes=true。",
+        {
+            "name": {"type": "string"},
+            "discard_changes": {"type": "boolean", "description": "强制丢弃未提交改动"},
+        },
+        ["name"],
+    ),
+    _fn_tool(
+        "keep_worktree",
+        "保留 worktree 供人工审查（不删除目录与分支）。",
+        {"name": {"type": "string"}},
+        ["name"],
+    ),
 ]
 
 
