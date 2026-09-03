@@ -5,7 +5,6 @@ import json
 import time
 
 from config import (
-    DEFAULT_MAX_TOKENS,
     KEEP_RECENT,
     MAX_BYTES,
     MAX_MESSAGES,

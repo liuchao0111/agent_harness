@@ -32,11 +32,12 @@ def decode_subprocess_output(data: bytes | None) -> str:
     return data.decode("utf-8", errors="replace")
 
 
-def safe_path(p: str) -> Path:
+def safe_path(p: str, cwd: Path | None = None) -> Path:
+    base = cwd or WORKDIR
     # 通过将WORKIDIR与p链接,并调用resolve方法，获得绝对路径对象
-    path = (WORKDIR / p).resolve()
+    path = (base / p).resolve()
     # 判断path路径是否在WORKDIR工作区内 如果不是则抛出异常
-    if not path.is_relative_to(WORKDIR):
+    if not path.is_relative_to(base.resolve()):
         raise ValueError(f"路径超出工作区 {p}")
     # 返回最终安全生成的最终路径对象
     return path

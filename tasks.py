@@ -27,6 +27,8 @@ class Task:
     owner: str | None
     # 任务依赖列表
     blockedBy: list[str]
+    # 绑定的 git worktree 名称
+    worktree: str | None = None
 
 
 # 获取所有任务列表

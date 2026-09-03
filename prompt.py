@@ -23,6 +23,8 @@ PROMPT_SECTIONS = {
         + "团队协作：spawn_teammate 启动自主队友（idle 时轮询看板并自动认领任务）；"
         + "create_task 创建任务后队友可在 idle 阶段自动认领；"
         + "send_message 向队友发消息；check_inbox 查看队友回信（含协议响应状态）。"
+        + "并行改码目录隔离：create_worktree(name, task_id?) 创建独立目录与分支；"
+        + "完成后 remove_worktree 或 keep_worktree 保留供审查。"
     ),
     # 'workspace' 键，对应当前的工作目录描述
     "workspace": f"工作目录 {WORKDIR}",

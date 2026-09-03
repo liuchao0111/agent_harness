@@ -123,3 +123,10 @@ TEAMMATE_WAIT_TIMEOUT = 120
 
 # Stop 时自动屏障最多触发次数(每轮先 wait 再给 Lead 一次汇总机会)
 TEAMMATE_BARRIER_ROUNDS = 1
+
+
+# git worktree 隔离目录
+WORKTREES_DIR = WORKDIR.parent / ".worktrees"
+
+# 创建 worktree 目录，如果目录不存在
+WORKTREES_DIR.mkdir(exist_ok=True)

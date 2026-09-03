@@ -10,6 +10,7 @@ from contextvars import ContextVar
 
 # 导入dataclass模块 用于定义数据类
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # 从config模块导入常量和对象
 from config import (
@@ -20,6 +21,7 @@ from config import (
     TEAMMATE_WAIT_TIMEOUT,  # Lead 等待队友结果的超时时间
     TEXT_ENCODING,  # 文本编码方式
     WORKDIR,  # 工作目录
+    WORKTREES_DIR,  # 工作树目录
     client,  # 大语言模型客户端
 )
 
@@ -27,7 +29,7 @@ from config import (
 from history import repair_messages_chain
 
 # 从tasks模块导入scan_unclaimed_tasks , claim_task
-from tasks import claim_task, scan_unclaimed_tasks
+from tasks import claim_task, complete_task, load_task, scan_unclaimed_tasks
 
 # 从utils模块导入assistant_message_dict方法
 from utils import assistant_message_dict
@@ -272,7 +274,7 @@ def is_waiting_for_plan_approval(teammate_name: str) -> bool:
 
 
 # 空闲轮询函数 用于处理队友的空闲状态。
-def idle_poll(agent_name: str, messages: list) -> str:
+def idle_poll(agent_name: str, messages: list, wt_ctx: dict | None = None) -> str:
     # 轮询 IDLE_TIMEOUT 秒，分为若干小轮，每一轮暂停 IDLE_POLL_INTERVAL 秒。
     for _ in range(IDLE_TIMEOUT // IDLE_POLL_INTERVAL):
         time.sleep(IDLE_POLL_INTERVAL)
@@ -306,6 +308,16 @@ def idle_poll(agent_name: str, messages: list) -> str:
         result = claim_task(task.id)
         # 如果认领成功 （返回值以"已认领"开头）
         if result.startswith("已认领"):
+            # 如果任务有 worktree 字段
+            if task.worktree:
+                # 构造工作目录路径
+                wt_path = WORKTREES_DIR / task.worktree
+                # 如果传入了 wt_ctx 则保存工作目录路径
+                if wt_ctx is not None:
+                    wt_ctx["path"] = str(wt_path)
+            # 如果没有 worktree 但 wt_ctx 存在则设置为 None
+            elif wt_ctx is not None:
+                wt_ctx["path"] = None
             # 将自动认领的信息记入messages
             messages.append(
                 {
@@ -365,13 +377,86 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
         "需要 Lead 审批时，调用 submit_plan 提交计划；提交后保持等待，直到收到 plan_approval_response。"
         "收到批准后继续执行计划；收到拒绝后根据反馈修改并重新提交。"
         "使用工具完成任务。你可以从看板列出未被认领且所有依赖已完成任务。"
+        f"若任务绑定了 worktree，bash/read/write/edit/glob 会在该目录下执行。"
     )
 
     # 队友线程主执行函数
     def run():
         # 延迟导入 避免与handler 循环依赖
         from tools.executor import execute_tool
+        from tools.handlers import run_bash, run_edit, run_glob, run_read, run_write
         from tools.schema import TEAMMATE_TOOLS
+
+        # worktree 工作目录上下文（认领绑定任务后自动切换）
+        wt_ctx: dict[str, str | None] = {"path": None}
+
+        # 定义一个函数用于获取当前 worktree 工作目录的 Path 对象，如果没有设置则返回 None
+        def _wt_cwd() -> Path | None:
+            # 从 wt_ctx 字典中获取 'path' 的值
+            p = wt_ctx["path"]
+            # 如果 p 存在则返回 Path(p)，否则返回 None
+            return Path(p) if p else None
+
+        # 定义一个函数，用于处理队友线程的具体工具调用逻辑
+        def teammate_execute_tool(tname: str, args: dict) -> str:
+            # 获取当前工作目录
+            cwd = _wt_cwd()
+            # 判断工具类型是否为 'bash' 命令行
+            if tname == "bash":
+                # 执行 bash 命令行工具
+                return run_bash(
+                    # 从参数获取命令字符串
+                    args.get("command", ""),
+                    # 是否在后台运行
+                    run_in_background=bool(args.get("run_in_background", False)),
+                    # 指定工作目录
+                    cwd=cwd,
+                )
+            # 判断工具类型为 'read_file'，读取文件
+            if tname == "read_file":
+                # 调用文件读取工具，带参数 limit 和工作目录
+                return run_read(args.get("path", ""), limit=args.get("limit"), cwd=cwd)
+            # 判断工具类型为 'write_file'，写入文件
+            if tname == "write_file":
+                # 调用文件写入工具，传入路径和内容
+                return run_write(args.get("path", ""), args.get("content", ""), cwd=cwd)
+            # 判断工具类型为 'edit_file'，编辑文件内容
+            if tname == "edit_file":
+                # 调用编辑文件工具，替换旧内容为新内容
+                return run_edit(
+                    args.get("path", ""),
+                    args.get("old_text", ""),
+                    args.get("new_text", ""),
+                    cwd=cwd,
+                )
+            # 判断工具类型为 'glob'，查找匹配文件
+            if tname == "glob":
+                # 通过模式匹配查找文件路径
+                return run_glob(args.get("pattern", ""), cwd=cwd)
+            # 判断工具类型为 'claim_task'，认领任务
+            if tname == "claim_task":
+                # 调用认领任务方法
+                result = claim_task(args.get("task_id", ""))
+                # 如果认领成功，则尝试切换 worktree 工作目录
+                if result.startswith("已认领"):
+                    # 载入任务信息
+                    task = load_task(args["task_id"])
+                    # 如果任务绑定专用 worktree，更新 worktree 目录路径
+                    wt_ctx["path"] = (
+                        str(WORKTREES_DIR / task.worktree) if task.worktree else None
+                    )
+                # 返回认领结果
+                return result
+            # 判断工具类型为 'complete_task'，完成任务
+            if tname == "complete_task":
+                # 调用完成任务方法
+                result = complete_task(args.get("task_id", ""))
+                # 完成后清空当前 worktree 路径
+                wt_ctx["path"] = None
+                # 返回任务完成结果
+                return result
+            # 如果是其它类型工具，通用工具执行接口
+            return execute_tool(tname, args)
 
         # 绑定当前线程的 Agent 身份，防止伪造  from_agent
         identity_token = current_agent.set(name)
