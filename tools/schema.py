@@ -253,6 +253,17 @@ TOOLS = [
         {"name": {"type": "string"}},
         ["name"],
     ),
+    _fn_tool(
+        "connect_mcp",
+        "连接 MCP 服务器并发现外部工具。可用: docs, deploy。连接后工具名前缀为mcp__。",
+        {
+            "name": {
+                "type": "string",
+                "description": "MCP 服务器名称，如 docs 或 deploy",
+            },
+        },
+        ["name"],
+    ),
 ]
 
 

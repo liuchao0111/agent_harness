@@ -20,15 +20,24 @@ from tools.schema import BASE_TOOLS
 from utils import assistant_message_dict, extract_text
 
 
-# 定义execute_tool函数 接收工具名称和参数字典 返回字符串
-def execute_tool(name: str, args: dict) -> str:
-    # 根据工具名称从TOOL_HANDLERS字典中获取对应的处理函数
-    handler = TOOL_HANDLERS.get(name)
+# 定义execute_tool函数 接收工具名称和参数字典 和 handlers 字典 返回字符串
+def execute_tool(name: str, args: dict, handlers: dict | None = None) -> str:
+    # 根据工具名称从 handlers（或全局 TOOL_HANDLERS）中获取对应的处理函数
+    pool = handlers if handlers is not None else TOOL_HANDLERS
+    # 根据工具名称从 pool 字典中获取对应的处理函数 handler
+    handler = pool.get(name)
     # 如果没有找到处理函数 则返回未知工具提示
     if not handler:
         return f"未知工具: {name}"
     # 获取处理函数的参数签名
     sig = inspect.signature(handler)
+    # 判断处理函数是否定义了 **kwargs（可变关键字参数），如果有则直接透传全部 args。
+    has_var_kw = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
+    # 如果处理器定义了 **kwargs，说明它设计为接受任意动态参数（如 MCP 工具），直接透传全部 args。
+    if has_var_kw:
+        return str(handler(**args))
     # 从输入的参数重筛选出处理函数所需要的有效参数
     valid = {k: v for k, v in args.items() if k in sig.parameters}
     return handler(**valid)

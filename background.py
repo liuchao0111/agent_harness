@@ -58,7 +58,9 @@ def should_run_background(tool_name: str, tool_input: dict) -> bool:
 
 
 # 启动一个后台任务
-def start_background_task(tool_call_id: str, name: str, args: dict) -> str:
+def start_background_task(
+    tool_call_id: str, name: str, args: dict, handlers: dict | None = None
+) -> str:
     # 声明使用全局变量
     global _bg_counter
 
@@ -68,8 +70,8 @@ def start_background_task(tool_call_id: str, name: str, args: dict) -> str:
     # 定义工作线程的函数
     def worker():
         try:
-            # 调用工具并获取结果
-            result = execute_tool(name, args)
+            # 调用工具并获取结果（传入当前工具池，MCP 工具才能在后台解析）
+            result = execute_tool(name, args, handlers=handlers)
 
         # 捕获预期的运行时错误和系统相关错误并记录信息
         except (RuntimeError, OSError, ValueError) as e:

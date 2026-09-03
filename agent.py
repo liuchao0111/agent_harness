@@ -34,6 +34,9 @@ from hooks import trigger_hooks
 # 从llm模块导入call_llm函数
 from llm import RecoveryState, call_llm, is_prompt_too_long_error, with_retry
 
+# 从mcp模块导入assemble_tool_pool和connected_mcp_summary函数
+from mcp import assemble_tool_pool, connected_mcp_summary
+
 # 从memory模块导入load_memories函数
 from memory import consolidate_memories, extract_memories, load_memories
 
@@ -66,7 +69,9 @@ def agent_loop(messages: list):
     # 本回合已触发的队友收尾屏障次数(防止无限拦截Stop)
     barrier_rounds = 0
     # 开始循环，直到返回最终回复。
-    while True:
+    while True: 
+        # 每轮重建工具池（connect_mcp 后 MCP 工具才能进入下一轮 LLM）
+        tools, handlers = assemble_tool_pool()
         # 先消费已经到点的 Cron 任务
         cron_jobs = consume_cron_queue()
         if cron_jobs:
@@ -99,6 +104,10 @@ def agent_loop(messages: list):
             print(f"  \x1b[32m[注入] {len(bg_notifications)} 条后台通知\x1b[0m")
         # 获取系统提示词
         system = get_system_prompt()
+        # 追加当前已连接 MCP 工具列表（避免 prompt 缓存拿不到新工具说明）
+        mcp_summary = connected_mcp_summary()
+        if mcp_summary:
+            system += "\n\n" + mcp_summary
         # 加载有关历史消息的记忆内容
         memories_content = load_memories(messages)
         # 如果记忆内容存在
@@ -148,8 +157,8 @@ def agent_loop(messages: list):
             # values from this iteration rather than late-binding the loop
             # variables (especially `system`).
             response = with_retry(
-                lambda system=system, messages=messages, max_tokens=max_tokens, model=state.current_model: (
-                    call_llm(system, messages, max_tokens, model)
+                lambda system=system, messages=messages, max_tokens=max_tokens, tools=tools: (
+                    call_llm(system, messages, max_tokens, state.current_model, tools=tools)
                 ),
                 state,
             )
@@ -291,7 +300,9 @@ def agent_loop(messages: list):
             # 判断是否应该以后台任务方式运行工具
             if should_run_background(name, args):
                 # 启动后台任务 并获取后台任务ID
-                bg_id = start_background_task(tool_call.id, name, args)
+                bg_id = start_background_task(
+                    tool_call.id, name, args, handlers=handlers
+                )
                 # 组织后台任务已启动的输出消息 包括任务ID 命令 通知方式
                 # todo 后续增加 task_notification
                 output = f"后台任务{bg_id}已启动,命令: {args.get('command', '')},完成后将通过"
@@ -299,11 +310,13 @@ def agent_loop(messages: list):
             else:
                 try:
                     # 执行工具函数，并获取输出
-                    output = execute_tool(name, args)
+                    output = execute_tool(name, args, handlers=handlers)
                 except (RuntimeError, ValueError, OSError) as e:
                     # 如果执行过程中发生已知异常，将异常信息作为输出内容
                     output = f"错误：{type(e).__name__}: {e}"
-            # 如果通过权限检查 则执行工具 获取输出结果
+                # connect_mcp 同步完成后立即重建工具池，供本轮后续 / 下一轮使用
+                if name == "connect_mcp":
+                    tools, handlers = assemble_tool_pool()
             # 成功更新任务列表后，重新开始计算未更新 todo 的轮数。
             if name == "todo_write" and output.startswith("已更新"):
                 rounds_since_todo = 0

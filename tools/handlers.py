@@ -12,6 +12,7 @@ from config import TEXT_ENCODING, WORKDIR
 
 # 从 skills模块 导入 load_skill函数
 from cron import cancel_job, cron_lock, schedule_job, scheduled_jobs
+from mcp import run_connect_mcp
 from skills import load_skill
 
 # 从tasks模块导入create_task函数
@@ -408,4 +409,5 @@ TOOL_HANDLERS = {
     "create_worktree": run_create_worktree,  # 创建隔离 git worktree
     "remove_worktree": run_remove_worktree,  # 删除 worktree
     "keep_worktree": run_keep_worktree,  # 保留 worktree 供审查
+    "connect_mcp": run_connect_mcp,  # 连接 MCP 服务器并发现外部工具
 }
