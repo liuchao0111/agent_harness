@@ -538,7 +538,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                         print(f"  \x1b[36m[{name}] > {tname} {preview[:100]}\x1b[0m")
                         # 工具异常不打崩整条线程
                         try:
-                            output = execute_tool(tname, args)
+                            output = teammate_execute_tool(tname, args)
                             print(
                                 f"  \x1b[32m[{tname}] < {output} spawn_teammate_thread/output\x1b[0m"
                             )
@@ -556,7 +556,7 @@ def spawn_teammate_thread(name: str, role: str, prompt: str) -> str:
                 if should_shutdown:
                     break
                 # 进入空闲轮询 自动认领时可设置wt_ctx
-                idle_result = idle_poll(name, messages)
+                idle_result = idle_poll(name, messages, wt_ctx)
                 if idle_result == "shutdown":
                     break
                 # 提交计划后每满一个空闲周期继续等待审批响应。
