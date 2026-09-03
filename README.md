@@ -1,11 +1,11 @@
 # AgentHarness
 
-本地 CLI 编程 Agent：用 OpenAI 兼容接口驱动主 Agent（Lead），通过工具读写文件、执行命令，并支持跨会话任务看板、定时唤醒、长期记忆和多队友协作。
+本地 CLI 编程 Agent：用 OpenAI 兼容接口驱动主 Agent（Lead），通过工具读写文件、执行命令，并支持跨会话任务看板、定时唤醒、长期记忆、多队友协作、git worktree 隔离，以及 mock MCP 外部工具。
 
 ```
 用户输入 → hooks → agent_loop（工具循环）→ 最终回复
                 ↑
-         cron 队列 / 队友 result / 收件箱
+         cron 队列 / 队友 result / 收件箱 / MCP 工具池
 ```
 
 ## 能力概览
@@ -15,6 +15,8 @@
 | 工具循环 | bash / 读写下文件 / glob / todo，危险命令会拦截或要求确认 |
 | 队友协作 | `spawn_teammate` 后台线程跑独立 Agent；文件邮箱通信；Stop 前等待 result |
 | 任务看板 | `create_task` / `claim_task` / `complete_task`，支持 `blockedBy` 依赖；队友 idle 结束时可自动认领 |
+| Worktree | `create_worktree` 在独立目录与 `wt/{name}` 分支上改码；完成后删除或保留审查 |
+| MCP | `connect_mcp` 连接 mock 服务器（`docs` / `deploy`），发现 `mcp__server__tool` 前缀工具 |
 | 定时任务 | 5 段 cron，可持久化到磁盘，到点注入 prompt 再跑一轮 Agent |
 | Skills | 启动时扫描 `skills/*/SKILL.md`，需要时 `load_skill` 加载全文 |
 | Memory | 任务结束后抽取长期记忆，写入 `.memory/`，下次注入系统提示 |
@@ -27,11 +29,21 @@
 
 ## 快速开始
 
+用 **uv**（仓库已有 `uv.lock`）：
+
 ```bash
 cd AgentHarness
+uv sync
+uv run python main.py
+```
+
+或 venv + pip：
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
+python main.py
 ```
 
 在项目根目录创建 `.env`：
@@ -44,43 +56,42 @@ MODEL_ID=gpt-4o
 # FALLBACK_MODEL=gpt-4o-mini
 ```
 
-启动：
-
-```bash
-python main.py
-```
-
 提示符 `>>` 后输入任务，回车发送。`q` / `exit` 退出。空行会被忽略。
 
 ## 模块结构
 
 ```
 main.py          交互循环、cron 调度线程、agent 互斥锁
-agent.py         Lead 主循环：LLM → 工具 → 压缩 / 记忆 / 队友屏障
+agent.py         Lead 主循环：LLM → 工具 → 压缩 / 记忆 / 队友屏障 / MCP 工具池
 config.py        环境变量、路径、超时与 token 上限
 prompt.py        系统提示拼装（身份 + 技能简介 + 相关记忆）
-llm.py           调用、重试、529、超长恢复
+llm.py           调用、重试、529、超长恢复；可传入动态 tools
 tools/           schema（工具定义）/ handlers（实现）/ executor（分发）
 teams.py         队友线程、MessageBus、协议、收尾屏障
 tasks.py         跨会话任务看板（.tasks/*.json）
+worktrees.py     git worktree 创建 / 删除 / 保留与任务绑定
+mcp.py           mock MCP 客户端、连接、工具名规范化、assemble_tool_pool
 cron.py          定时任务调度与队列
 memory.py        记忆抽取、索引、合并
 history.py       对话压缩与 tool 链修复
 hooks.py         UserPromptSubmit / PreToolUse / PostToolUse / Stop
 skills.py        扫描 skills/ 注册表
+background.py    慢命令后台派发与结果收集
 ```
 
 ## 主循环在做什么
 
 每次用户（或 cron）触发 `agent_loop`：
 
-1. 消费已到点的 cron，把 prompt 注入对话
-2. 把 Lead 收件箱（队友消息 / result）注入为 user 消息
-3. 组装系统提示（技能简介 + 相关记忆）
-4. 必要时压缩历史，调用 LLM
-5. 若有 `tool_calls`：权限检查 → 执行 → 把结果追加进 messages，继续循环
-6. 若无工具：若仍有未收回的队友 result，先 `await` 再给 Lead 一轮汇总（队友屏障）
-7. 抽取 / 合并记忆后结束本轮
+1. **重建工具池**（builtin + 已连接 MCP），使本轮 LLM 能看到新工具
+2. 消费已到点的 cron，把 prompt 注入对话
+3. 把 Lead 收件箱（队友消息 / result）注入为 user 消息
+4. 组装系统提示（技能简介 + 相关记忆 + 已连接 MCP 工具列表）
+5. 必要时压缩历史，调用 LLM（传入当前 `tools`）
+6. 若有 `tool_calls`：权限检查 → 执行（传入 `handlers`）→ 把结果追加进 messages，继续循环
+7. `connect_mcp` **同步成功后**立刻重建工具池，同一轮后续调用即可用 `mcp__*` 工具
+8. 若无工具：若仍有未收回的队友 result，先等待再给 Lead 一轮汇总（队友屏障）
+9. 抽取 / 合并记忆后结束本轮
 
 ## 工具一览
 
@@ -89,7 +100,7 @@ skills.py        扫描 skills/ 注册表
 | 工具 | 用途 |
 |------|------|
 | `bash` | 执行命令；`run_in_background=true` 可后台跑 |
-| `read_file` / `write_file` / `edit_file` / `glob` | 文件操作 |
+| `read_file` / `write_file` / `edit_file` / `glob` | 文件操作（可相对 worktree 的 `cwd`） |
 | `todo_write` | 本会话待办 |
 | `load_skill` | 加载 `skills/<name>/SKILL.md` |
 | `compact` | 摘要压缩较早对话 |
@@ -101,8 +112,10 @@ skills.py        扫描 skills/ 注册表
 | `request_plan` / `review_plan` | 要求队友提交计划并审批 |
 | `request_shutdown` | 请队友优雅退出 |
 | `spawn_subagent` | 同步子 Agent，只收回结论 |
+| `create_worktree` / `remove_worktree` / `keep_worktree` | 隔离改码目录与分支 |
+| `connect_mcp` | 连接 MCP 服务器并发现外部工具 |
 
-**队友** 工具更少：文件与 bash、`send_message`、`submit_plan`、`todo_write`、`load_skill`。收件箱由运行时自动检查，不必自己 `check_inbox`。任务 idle 结束时由运行时调用 `claim_task` 自动认领，不经过模型工具调用。
+**队友** 工具更少：文件与 bash、`send_message`、`submit_plan`、`todo_write`、`load_skill`。收件箱由运行时自动检查。任务 idle 结束时由运行时调用 `claim_task` 自动认领，不经过模型工具调用。队友**没有** `connect_mcp`、worktree、任务看板、`await_teammates`。
 
 ## 队友协作
 
@@ -128,6 +141,40 @@ Lead ──spawn_teammate──► 后台线程（独立 messages + 身份 Conte
 - `blockedBy`：依赖任务全部 `completed` 后才可认领。
 - `owner`：认领者名称，取自当前 Agent 身份（`current_agent`），不能由模型伪造。
 - 队友在 idle 轮询结束后，会扫描「pending、无 owner、依赖已满足」的任务并尝试认领第一条；成功则回到工作循环。
+- 可选 `worktree` 字段：由 `create_worktree(..., task_id)` 绑定，不改变任务状态。
+
+## Worktree 隔离
+
+并行改码时不要直接改主工作区：
+
+1. `create_worktree(name, task_id?)`：在 `WORKDIR` 的**父目录** `.worktrees/<name>` 添加 git worktree，分支 `wt/<name>`；可选绑定任务
+2. 文件工具可带 `cwd`，把读写限制在该 worktree
+3. 完成后 `remove_worktree`（有未提交变更时拒绝，除非 `discard_changes=true`），或 `keep_worktree` 留给人工审查
+4. 事件追加写入 `.worktrees/events.jsonl`
+
+名称仅允许 `[A-Za-z0-9._-]{1,64}`。
+
+## MCP（mock）
+
+当前不是真实 MCP 网络协议，而是进程内 mock，用来练习「连接 → 发现 → 带前缀调用」：
+
+```
+connect_mcp("docs") 或 connect_mcp("deploy")
+        │
+        ▼
+mcp_clients[name] = MCPClient
+        │
+assemble_tool_pool()
+        │
+LLM 工具列表 += mcp__docs__search 等
+```
+
+| 服务器 | 工具 | 说明 |
+|--------|------|------|
+| `docs` | `search(query)`、`get_version()` | 只读文档检索 / 版本 |
+| `deploy` | `trigger(service)`、`status(service)` | 触发部署 / 查状态 |
+
+连接后工具名格式：`mcp__{server}__{tool}`（非法字符会替换成 `_`）。系统提示会追加已连接工具列表。下一轮（以及同一轮里 `connect_mcp` 之后的后续 tool_call）即可调用。
 
 ## 定时任务
 
@@ -157,6 +204,7 @@ Lead ──spawn_teammate──► 后台线程（独立 messages + 身份 Conte
 | `.memory/` | 长期记忆与索引 |
 | `.transcript/` | 会话转录 |
 | `.task_outputs/tool-results/` | 过长工具输出落盘 |
+| `../.worktrees/` | git worktree 目录与 `events.jsonl`（相对项目父目录） |
 
 ## 权限
 
@@ -177,6 +225,7 @@ Lead ──spawn_teammate──► 后台线程（独立 messages + 身份 Conte
 | `TEAMMATE_BARRIER_ROUNDS` | 1 | Stop 拦截最多几轮 |
 | `IDLE_TIMEOUT` | 60（`teams.py`） | 队友无消息后空闲秒数 |
 | `CONSOLIDATE_THRESHOLD` | 10 | 记忆合并条数阈值 |
+| `WORKTREES_DIR` | `WORKDIR.parent / ".worktrees"` | worktree 根目录 |
 
 ## 许可与状态
 

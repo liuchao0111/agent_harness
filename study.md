@@ -45,6 +45,8 @@ load_memories() 读取记忆正文
 ###  Task System 用于让 Agent 跨会话保存和恢复“任务计划、状态、依赖与进度”，它不是原始对话记录，也不是模型本身的内部记忆 它保存的是执行状态
 ### Memory 这是长期背景知识。
 ### TODO 是本次会话的简单清单
+### Worktree 是并行改码的目录/分支隔离，不是任务状态本身
+### MCP 是运行时发现的外部工具（当前为 mock），名字带 mcp__server__tool 前缀
 
 
 # tasks 工作流程
@@ -112,3 +114,58 @@ agent_loop() 中 consume_cron_queue()
 Agent 执行 prompt
   ↓
 下一分钟 cron_scheduler_loop() 再次检查同一个 schedule_jobs 里的任务
+
+
+# 队友屏障工作流程
+Lead spawn_teammate(name)
+  ↓
+pending_teammate_results.add(name)
+  ↓
+队友线程干活，结束时 BUS.send(..., type=result, spawn_id)
+  ↓
+Lead 读收件箱 → _mark_results_received → discard(name)
+  ↓
+理想路径：Lead 调用 await_teammates → wait_for_teammates 轮询邮箱
+  ↓
+兜底：Lead 无 tool_calls 准备结束
+  ↓
+apply_teammate_stop_barrier
+  ↓
+仍有 pending → 等待 TEAMMATE_WAIT_TIMEOUT → 注入收件箱 → 再给 Lead 一轮汇总
+  ↓
+TEAMMATE_BARRIER_ROUNDS 用尽后允许真正 Stop
+
+### 未看到 result 前不要向用户声称完成。同名重启会换 spawn_id，旧 result 不会误清新一轮屏障。
+
+
+# Worktree 工作流程
+create_worktree(name, task_id?)
+  ↓
+git worktree add ../.worktrees/<name> -b wt/<name>
+  ↓
+可选 bind_task_to_worktree（只写 task.worktree，不改任务状态）
+  ↓
+文件工具带 cwd，读写限制在该目录
+  ↓
+remove_worktree（有未提交变更则拒绝，除非 discard_changes）
+或 keep_worktree（保留目录与分支供审查）
+  ↓
+事件追加 .worktrees/events.jsonl
+
+
+# MCP 工作流程
+connect_mcp("docs" | "deploy")
+  ↓
+MOCK_SERVERS 工厂创建 MCPClient 并 register 工具
+  ↓
+写入 mcp_clients
+  ↓
+agent_loop 每轮 assemble_tool_pool()
+  ↓
+TOOLS + mcp__docs__search / mcp__deploy__trigger 等
+  ↓
+execute_tool(..., handlers=动态池) 按前缀分发给 MCPClient.call_tool
+  ↓
+系统提示追加 connected_mcp_summary()
+
+### 这是进程内 mock，不是真实 MCP 网络连接。队友线程看不到这些工具。
